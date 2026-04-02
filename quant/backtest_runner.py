@@ -24,6 +24,7 @@ from typing import Dict, List, Optional
 
 try:
     import akshare as ak
+    from akshare.futures.futures_zh_sina import futures_zh_daily_sina
     AKSHARE_AVAILABLE = True
 except ImportError:
     AKSHARE_AVAILABLE = False
@@ -82,7 +83,7 @@ def fetch_akshare_futures(symbol: str, days: int = 300) -> Optional[Dict]:
         
         # 获取期货日线数据
         # 注意：AkShare 的期货数据接口可能因版本而异
-        df = ak.futures_zh_daily_sina(symbol=akshare_symbol)
+        df = futures_zh_daily_sina(symbol=akshare_symbol)
         
         if df is None or df.empty:
             print(f"未获取到 {symbol.upper()} 数据")
@@ -109,12 +110,13 @@ def fetch_akshare_futures(symbol: str, days: int = 300) -> Optional[Dict]:
         # 尝试备用接口
         try:
             print("尝试备用接口...")
-            df = ak.futures_zh_daily_sina(symbol=akshare_symbol, adjust="qfq")
+            akshare_symbol_upper = akshare_symbol.upper() + '0'
+            df = futures_zh_daily_sina(symbol=akshare_symbol_upper)
             if df is not None and not df.empty:
                 df = df.tail(days)
                 return {
                     'symbol': symbol,
-                    'dates': [str(d) for d in df.index],
+                    'dates': df['date'].tolist(),
                     'opens': df['open'].tolist(),
                     'highs': df['high'].tolist(),
                     'lows': df['low'].tolist(),

@@ -1,0 +1,16 @@
+{
+  "summary": {
+    "symbol": "rb",
+    "total_trades": 0,
+    "winning_trades": 0,
+    "losing_trades": 0,
+    "win_rate": 0,
+    "initial_capital": 100000,
+    "final_capital": 100000,
+    "total_pnl": 0,
+    "total_return": 0.0,
+    "max_drawdown": 0
+  },
+  "trade_count": 0,
+  "trades": []
+}
