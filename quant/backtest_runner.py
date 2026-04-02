@@ -196,13 +196,16 @@ def load_csv_data(file_path: str) -> Optional[Dict]:
         return None
 
 
-def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000) -> Dict:
+def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
+                  risk_percent: float = 0.01, atr_stop: float = 2.0, atr_target: float = 6.0) -> Dict:
     """运行回测"""
     print(f"\n{'='*60}")
     print(f"  {symbol.upper()} 期货策略回测")
     print(f"{'='*60}")
     
-    strategy = ChinaFuturesStrategy(symbol=symbol, risk_percent=0.02)
+    # 使用传入的参数
+    strategy = ChinaFuturesStrategy(symbol=symbol, risk_percent=risk_percent,
+                                     atr_stop=atr_stop, atr_target=atr_target)
     
     dates, opens, highs, lows, closes = data['dates'], data['opens'], data['highs'], data['lows'], data['closes']
     
@@ -221,12 +224,12 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000) -> Di
         # 入场
         if signal == 1 and position == 0:
             if atr > 0:
-                position_size = int((current_capital * 0.02) / (atr * 2 * 10))
+                position_size = int((current_capital * risk_percent) / (atr * atr_stop * 10))
                 position = position_size
                 entry_price = closes[i]
                 trades.append({
                     'date': dates[i], 'type': 'LONG', 'entry_price': entry_price,
-                    'position': position, 'stop_loss': atr * 2,
+                    'position': position, 'stop_loss': atr * atr_stop,
                     'reason': f"{trend} trend, signal={signal}"
                 })
         
@@ -235,9 +238,9 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000) -> Di
             pnl = (closes[i] - entry_price) * position * 10
             should_stop, reason = False, ""
             
-            if closes[i] < entry_price - atr * 2:
+            if closes[i] < entry_price - atr * atr_stop:
                 should_stop, reason = True, "ATR Stop Loss"
-            elif closes[i] > entry_price + atr * 4:
+            elif closes[i] > entry_price + atr * atr_target:
                 should_stop, reason = True, "Take Profit"
             elif signal == -1:
                 should_stop, reason = True, "Short Signal"

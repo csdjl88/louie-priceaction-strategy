@@ -18,7 +18,7 @@ china_futures_strategy.py - 国内期货 Price Action 策略
     
     strategy = ChinaFuturesStrategy(
         symbol='rb',  # 螺纹钢
-        risk_percent=0.02,
+        risk_percent=0.01,
         trading_hours='full'  # full=有夜盘, day=只有日盘
     )
 """
@@ -538,10 +538,11 @@ class ChinaFuturesStrategy:
     
     def __init__(self,
                  symbol: str = 'rb',
-                 risk_percent: float = 0.02,
+                 risk_percent: float = 0.01,
                  atr_period: int = 14,
                  sma_period: int = 50,
-                 atr_stop_multiplier: float = 2.0,
+                 atr_stop: float = 2.0,
+                 atr_target: float = 6.0,
                  lookback_period: int = 20,
                  body_ratio: float = 2.0,
                  shadow_ratio: float = 2.0,
@@ -1096,7 +1097,7 @@ def demo():
     # 创建策略
     strategy = ChinaFuturesStrategy(
         symbol='rb',
-        risk_percent=0.02,
+        risk_percent=0.01,
         sma_period=50,
         atr_period=14
     )
