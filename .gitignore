@@ -37,3 +37,8 @@ __pycache__/
 
 # Vitest
 __screenshots__/
+
+# Backtest results
+backtest_result_*.json
+check_data.py
+test_*.py

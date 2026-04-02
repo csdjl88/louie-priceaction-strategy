@@ -39,6 +39,7 @@ def fetch_akshare_futures(symbol: str, days: int = 300) -> Optional[Dict]:
     
     Args:
         symbol: 品种代码 (rb, hc, i, j, cu, al, zn, ni, ru, ma, ta, au, ag, sc 等)
+               也可以用带后缀的如 RB0, RU0, NR0, BR0 等获取主力合约
         days: 获取天数
     
     Returns:
@@ -47,53 +48,30 @@ def fetch_akshare_futures(symbol: str, days: int = 300) -> Optional[Dict]:
     if not AKSHARE_AVAILABLE:
         return None
     
-    # AkShare 期货品种映射
-    symbol_map = {
-        'rb': 'rb',   # 螺纹钢
-        'hc': 'hc',   # 热轧卷板
-        'i': 'i',     # 铁矿石
-        'j': 'j',     # 焦炭
-        'jm': 'jm',   # 焦煤
-        'cu': 'cu',   # 铜
-        'al': 'al',   # 铝
-        'zn': 'zn',   # 锌
-        'ni': 'ni',   # 镍
-        'ru': 'ru',   # 橡胶
-        'bu': 'bu',   # 沥青
-        'ma': 'ma',   # 甲醇
-        'ta': 'ta',   # PTA
-        'm': 'm',     # 豆粕
-        'y': 'y',     # 豆油
-        'p': 'p',     # 棕榈油
-        'c': 'c',     # 玉米
-        'cf': 'cf',   # 棉花
-        'sr': 'sr',   # 白糖
-        'au': 'au',   # 黄金
-        'ag': 'ag',   # 白银
-        'sc': 'sc',   # 原油
-    }
-    
-    akshare_symbol = symbol_map.get(symbol.lower())
-    if not akshare_symbol:
-        print(f"不支持的品种: {symbol}")
-        return None
-    
     try:
         print(f"从 AkShare 获取 {symbol.upper()} 数据...")
         
-        # 获取期货日线数据
-        # 注意：AkShare 的期货数据接口可能因版本而异
-        df = futures_zh_daily_sina(symbol=akshare_symbol)
+        # 直接传入品种代码获取数据
+        df = futures_zh_daily_sina(symbol=symbol)
         
         if df is None or df.empty:
-            print(f"未获取到 {symbol.upper()} 数据")
+            print(f"未获取到 {symbol.upper()} 数据，尝试备用方式")
             return None
         
-        # 数据格式调整
-        df = df.iloc[::-1].tail(days)  # 反转并只取最后 N 天（按时间正序）
+        # 检查是否有 date 列
+        if 'date' in df.columns:
+            dates = df['date'].tolist()
+        else:
+            # 索引就是日期
+            dates = [str(d) for d in df.index]
         
-        # date 是索引，不是列
-        dates = [str(d) for d in df.index]
+        # 只取最后 N 天
+        if len(dates) > days:
+            df = df.tail(days)
+            if 'date' in df.columns:
+                dates = df['date'].tolist()
+            else:
+                dates = [str(d) for d in df.index]
         
         return {
             'symbol': symbol,
@@ -107,24 +85,8 @@ def fetch_akshare_futures(symbol: str, days: int = 300) -> Optional[Dict]:
         
     except Exception as e:
         print(f"AkShare 获取失败: {e}")
-        # 尝试备用接口
-        try:
-            print("尝试备用接口...")
-            akshare_symbol_upper = akshare_symbol.upper() + '0'
-            df = futures_zh_daily_sina(symbol=akshare_symbol_upper)
-            if df is not None and not df.empty:
-                df = df.tail(days)
-                return {
-                    'symbol': symbol,
-                    'dates': df['date'].tolist(),
-                    'opens': df['open'].tolist(),
-                    'highs': df['high'].tolist(),
-                    'lows': df['low'].tolist(),
-                    'closes': df['close'].tolist(),
-                    'volumes': df['volume'].tolist(),
-                }
-        except Exception as e2:
-            print(f"备用接口也失败: {e2}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -229,12 +191,14 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
         signal = result.get('signal', signal_map.get(action, 0))
         trend, atr = result.get('trend', 'unknown'), result.get('atr', 0)
         
-        # 入场
-        if (signal == 1 or action == 'long') and position == 0:
-            if atr > 0:
-                position_size = int((current_capital * effective_risk) / (atr * atr_stop * 10))
-                if position_size <= 0:
-                    continue  # Skip if position size is 0
+        # 入场 - 支持做多和做空
+        if position == 0 and atr > 0:
+            position_size = int((current_capital * effective_risk) / (atr * atr_stop * 10))
+            if position_size <= 0:
+                position_size = 1  # 最小仓位
+            
+            # 做多
+            if signal == 1 or action == 'long':
                 position = position_size
                 entry_price = closes[i]
                 trades.append({
@@ -242,18 +206,40 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                     'position': position, 'stop_loss': atr * atr_stop,
                     'reason': f"{trend} trend, signal={signal}"
                 })
+            # 做空
+            elif signal == -1 or action == 'short':
+                position = -position_size  # 负数表示空头
+                entry_price = closes[i]
+                trades.append({
+                    'date': dates[i], 'type': 'SHORT', 'entry_price': entry_price,
+                    'position': position, 'stop_loss': atr * atr_stop,
+                    'reason': f"{trend} trend, signal={signal}"
+                })
         
         # 出场
-        elif position > 0:
-            pnl = (closes[i] - entry_price) * position * 10
-            should_stop, reason = False, ""
-            
-            if closes[i] < entry_price - atr * atr_stop:
-                should_stop, reason = True, "ATR Stop Loss"
-            elif closes[i] > entry_price + atr * atr_target:
-                should_stop, reason = True, "Take Profit"
-            elif signal == -1 or action == 'short':
-                should_stop, reason = True, "Short Signal"
+        elif position != 0:
+            # 多头出场
+            if position > 0:
+                pnl = (closes[i] - entry_price) * position * 10
+                should_stop, reason = False, ""
+                
+                if closes[i] < entry_price - atr * atr_stop:
+                    should_stop, reason = True, "ATR Stop Loss"
+                elif closes[i] > entry_price + atr * atr_target:
+                    should_stop, reason = True, "Take Profit"
+                elif signal == -1 or action == 'short':
+                    should_stop, reason = True, "Reverse to Short"
+            # 空头出场
+            else:
+                pnl = (entry_price - closes[i]) * abs(position) * 10
+                should_stop, reason = False, ""
+                
+                if closes[i] > entry_price + atr * atr_stop:
+                    should_stop, reason = True, "ATR Stop Loss"
+                elif closes[i] < entry_price - atr * atr_target:
+                    should_stop, reason = True, "Take Profit"
+                elif signal == 1 or action == 'long':
+                    should_stop, reason = True, "Reverse to Long"
             
             if should_stop:
                 current_capital += pnl
@@ -265,6 +251,10 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
     # 平仓
     if position > 0:
         pnl = (closes[-1] - entry_price) * position * 10
+        current_capital += pnl
+        trades[-1].update({'exit_price': closes[-1], 'pnl': pnl, 'exit_reason': 'End of Backtest'})
+    elif position < 0:
+        pnl = (entry_price - closes[-1]) * abs(position) * 10
         current_capital += pnl
         trades[-1].update({'exit_price': closes[-1], 'pnl': pnl, 'exit_reason': 'End of Backtest'})
     
