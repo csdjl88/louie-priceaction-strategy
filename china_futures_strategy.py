@@ -548,10 +548,11 @@ class ChinaFuturesStrategy:
                  shadow_ratio: float = 2.0,
                  require_trend: bool = True,
                  use_limit_filter: bool = True,
-                 max_loss_per_day: float = 0.05):
+                 max_loss_per_day: float = 0.05,
+                 trading_mode: str = "swing"):
         """
         初始化策略参数
-        
+
         Args:
             symbol: 合约代码（如 'rb', 'i', 'cu'）
             risk_percent: 单笔风险比例（默认2%）
@@ -564,8 +565,10 @@ class ChinaFuturesStrategy:
             require_trend: 是否要求趋势确认
             use_limit_filter: 是否过滤涨跌停附近的交易
             max_loss_per_day: 单日最大亏损比例
+            trading_mode: 交易模式，"intraday"（日内） 或 "swing"（波段）
         """
         self.symbol = symbol
+        self.trading_mode = trading_mode
         self.config = FUTURES_CONFIG.get(symbol, FUTURES_CONFIG['rb'])
         self.risk_percent = risk_percent
         self.atr_period = atr_period
@@ -774,7 +777,8 @@ class ChinaFuturesStrategy:
             'take_profit': 0,
             'risk_reward': 0,
             'action': 'none',
-            'reason': ''
+            'reason': '',
+            'session_end_force_close': False
         }
         
         # 1. 趋势判断
@@ -875,6 +879,11 @@ class ChinaFuturesStrategy:
             else:
                 result['action'] = 'none'
                 result['reason'] = f"信心不足 ({result['confidence']:.0%}) 或盈亏比不佳 ({risk_reward:.2f})"
+
+        # 日内模式：持仓跨日时强制平仓检测
+        if self.trading_mode == 'intraday' and 'entry_idx' in result and (idx - result['entry_idx']) > 0:
+            result['session_end_force_close'] = True
+
         # 确保 ATR 在返回结果中
         if 'atr' not in result:
             result['atr'] = atr(opens, highs, lows, closes, idx, period=self.atr_period)
