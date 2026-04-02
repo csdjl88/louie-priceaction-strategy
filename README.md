@@ -4,9 +4,7 @@
 
 ---
 
-## 📊 项目背景
-
-### 核心理念
+## 核心理念
 
 | 原则 | 说明 |
 |------|------|
@@ -24,40 +22,57 @@
 
 ---
 
-## 📁 项目结构
+## 项目状态
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 单一品种回测 | ✅ 完成 | `backtest_runner.py` |
+| 多品种数据获取 | ✅ 完成 | `data_fetcher.py` |
+| 波动性筛选 | ✅ 完成 | `symbol_selector.py` |
+| 日内交易模式 | ✅ 完成 | `china_futures_strategy.py` |
+| 多品种回测 | ✅ 完成 | `multi_backtest_runner.py` |
+
+---
+
+## 项目结构
 
 ```
 quant/
-├── china_futures_strategy.py   # 🏠 国内期货专用策略入口
-├── backtest_runner.py          # 📈 回测运行器
-├── indicators.py              # 📐 技术指标（零依赖实现）
-├── patterns.py                # 🔍 K线形态检测
-├── brooks_concepts.py         # 📚 Brooks 核心概念
-├── strategy.py                # ⚙️ 策略核心逻辑
-├── risk.py                    # 🛡️ 风险管理
-├── backtest.py                # 🔄 回测引擎
-├── price_action_framework.py  # 🔧 价格行为框架
-├── pyproject.toml             # 📦 uv 包管理配置
-└── README.md                  # 📖 说明文档
+├── china_futures_strategy.py   # 国内期货策略入口（支持日内/波段模式）
+├── backtest_runner.py          # 单一品种回测运行器
+├── data_fetcher.py            # 多品种期货数据获取（AkShare 真实数据）
+├── symbol_selector.py         # 基于波动性的品种筛选
+├── multi_backtest_runner.py   # 多品种批量回测和排名
+├── indicators.py              # 技术指标（零依赖实现）
+├── patterns.py                # K线形态检测
+├── brooks_concepts.py         # Brooks 核心概念
+├── strategy.py                # 策略核心逻辑
+├── risk.py                    # 风险管理
+├── backtest.py               # 回测引擎
+├── price_action_framework.py  # 价格行为框架
+├── pyproject.toml            # uv 包管理配置
+└── README.md                 # 说明文档
 ```
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 环境要求
 
-- Python 3.11+
+- Python 3.9+ (推荐 3.11+)
 - uv 包管理器
 
 ### 安装依赖
 
 ```bash
-cd quant
+cd /Users/hse/projects/backend/quant
 uv sync
 ```
 
 ### 运行回测
+
+#### 单一品种回测
 
 ```bash
 # 螺纹钢回测（使用 AkShare 真实数据）
@@ -65,9 +80,48 @@ uv run python backtest_runner.py --symbol rb --source akshare --days 300
 
 # 模拟数据回测
 uv run python backtest_runner.py --symbol rb --source simulate
+```
 
-# CSV 文件回测
-uv run python backtest_runner.py --symbol rb --source csv --file data.csv
+#### 多品种回测（2025 年真实数据）
+
+```bash
+# 多品种波段模式回测
+uv run python -c "
+from multi_backtest_runner import run_multi_backtest, print_ranking_report
+import warnings
+warnings.filterwarnings('ignore')
+
+results = run_multi_backtest(
+    symbols=None,           # 自动筛选所有品种
+    days=300,              # 约一年数据
+    initial_capital=100000,
+    trading_mode='swing',   # 波段模式（可持仓过夜）
+    top_n=20,
+    min_vol_rate=0.0,
+    max_vol_rate=1.0,
+    min_volume=0
+)
+print_ranking_report(results)
+"
+
+# 多品种日内模式回测
+uv run python -c "
+from multi_backtest_runner import run_multi_backtest, print_ranking_report
+import warnings
+warnings.filterwarnings('ignore')
+
+results = run_multi_backtest(
+    symbols=None,
+    days=300,
+    initial_capital=100000,
+    trading_mode='intraday',  # 日内模式（当日平仓）
+    top_n=20,
+    min_vol_rate=0.0,
+    max_vol_rate=1.0,
+    min_volume=0
+)
+print_ranking_report(results)
+"
 ```
 
 ### 参数说明
@@ -75,25 +129,102 @@ uv run python backtest_runner.py --symbol rb --source csv --file data.csv
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `--symbol` | 期货品种代码 | `rb` |
-| `--source` | 数据源：`akshare`、`simulate`、`csv` | `akshare` |
+| `--source` | 数据源：`akshare`、`simulate` | `akshare` |
 | `--days` | 数据天数 | `300` |
 | `--capital` | 初始资金 | `100000` |
-| `--file` | CSV 文件路径（csv 模式） | `data.csv` |
 
-### 支持的期货品种
+### 支持的期货品种（33 个）
 
 | 类别 | 品种代码 |
 |------|----------|
 | 黑色系 | rb（螺纹钢）、hc（热轧）、i（铁矿）、j（焦炭）、jm（焦煤） |
-| 有色金属 | cu（铜）、al（铝）、zn（锌）、ni（镍） |
-| 化工系 | ru（橡胶）、bu（沥青）、ma（甲醇）、ta（PTA） |
-| 农产品 | m（豆粕）、y（豆油）、p（棕榈油）、c（玉米） |
+| 有色金属 | cu（铜）、al（铝）、zn（锌）、ni（镍）、sn（锡） |
+| 化工系 | ru（橡胶）、bu（沥青）、ma（甲醇）、ta（PTA）、pp（聚丙烯）、l（塑料）、v（PVC） |
+| 农产品 | m（豆粕）、y（豆油）、p（棕榈油）、c（玉米）、cs（玉米淀粉）、a（豆一）、b（豆二）、oi（菜油）、rm（菜粕）、cf（棉花）、sr（白糖） |
 | 贵金属 | au（黄金）、ag（白银） |
 | 能源 | sc（原油） |
+| 国债 | t（10 年期国债）、tf（5 年期国债） |
 
 ---
 
-## 📖 策略详解
+## 核心功能
+
+### 1. 多品种数据获取 (`data_fetcher.py`)
+
+```python
+from data_fetcher import get_all_futures_symbols, fetch_futures_data, fetch_multi_futures_data
+
+# 获取所有品种
+symbols = get_all_futures_symbols()  # 33 个品种
+
+# 单品种获取
+data = fetch_futures_data('rb', days=300)
+
+# 批量获取
+multi_data = fetch_multi_futures_data(['rb', 'cu', 'au'], days=300)
+```
+
+### 2. 波动性筛选 (`symbol_selector.py`)
+
+```python
+from symbol_selector import select_top_symbols, get_volatility_report
+
+# 筛选高波动性品种
+results = select_top_symbols(
+    symbols=None,           # None = 全部品种
+    days=60,
+    top_n=10,
+    min_vol_rate=0.015,    # 最小波动率 1.5%
+    max_vol_rate=0.04,     # 最大波动率 4%
+    min_volume=10000        # 最小成交量
+)
+
+# 打印波动性报告
+print(get_volatility_report(top_n=20))
+```
+
+### 3. 日内交易模式 (`china_futures_strategy.py`)
+
+```python
+from china_futures_strategy import ChinaFuturesStrategy
+
+# 波段模式（默认，可持仓过夜）
+strategy_swing = ChinaFuturesStrategy(symbol='rb', trading_mode='swing')
+
+# 日内模式（当日开平，不过夜）
+strategy_intraday = ChinaFuturesStrategy(symbol='rb', trading_mode='intraday')
+
+# 分析市场
+result = strategy.analyze(opens, highs, lows, closes, idx)
+# result 包含 session_end_force_close 标记日内平仓信号
+```
+
+### 4. 多品种回测 (`multi_backtest_runner.py`)
+
+```python
+from multi_backtest_runner import run_multi_backtest, print_ranking_report, BacktestResult
+
+# 运行多品种回测
+results = run_multi_backtest(
+    symbols=None,           # 自动筛选
+    days=300,
+    initial_capital=100000,
+    trading_mode='swing',   # 或 'intraday'
+    top_n=20
+)
+
+# 打印排名报告
+print_ranking_report(results)
+
+# 综合评分计算
+from multi_backtest_runner import compute_comprehensive_score
+for r in results:
+    r.comprehensive_score = compute_comprehensive_score(r)
+```
+
+---
+
+## 策略详解
 
 ### 入场流程
 
@@ -118,20 +249,20 @@ uv run python backtest_runner.py --symbol rb --source csv --file data.csv
 | 类型 | 条件 |
 |------|------|
 | 止损 | 2 × ATR |
-| 止盈 | 4 × ATR（2:1 盈亏比） |
-| 时间止损 | 持仓 > N 根 K 线无盈利 |
+| 止盈 | 6 × ATR（3:1 盈亏比） |
+| 日内强制平仓 | 持仓跨日且 mode=intraday |
 | 反转出场 | 出现反向信号 |
 
 ### 仓位管理
 
 ```python
-风险金额 = 账户余额 × 2%
-仓位手数 = 风险金额 ÷ (止损ATR × 每手吨数)
+风险金额 = 账户余额 × 5%
+仓位手数 = 风险金额 ÷ (2 × ATR × 每手吨数)
 ```
 
 ---
 
-## 📐 技术指标（零依赖）
+## 技术指标（零依赖）
 
 所有指标均在 `indicators.py` 中实现，无需安装任何第三方库：
 
@@ -143,61 +274,41 @@ uv run python backtest_runner.py --symbol rb --source csv --file data.csv
 | Keltner Channels | 肯特纳通道 |
 | ADX | 趋势强度 |
 | RSI | 相对强弱 |
-| Support/Resistance | 支撑阻力位 |
-| Fibonacci | 斐波那契回撤 |
 
 ---
 
-## 📈 回测结果（AkShare 真实数据）
+## 2025 年回测结果（AkShare 真实数据）
 
-### RB 螺纹钢（2024-04-08 至 2025-04-01）
+### 波段模式（Swing）- 持仓可过夜
 
-| 指标 | 数值 |
-|------|------|
-| 总交易次数 | 16 笔 |
-| 胜率 | 37.5% |
-| 总收益率 | -6.66% |
-| 最大回撤 | 15.54% |
-| 盈亏比 | 0.98 |
+| 排名 | 品种 | 名称 | 收益率% | 最大回撤% | 胜率% | 评分 |
+|------|------|------|---------|-----------|-------|------|
+| 1 | pp | 聚丙烯 | **+93.79%** | 6.26 | 83.3% | 0.747 |
+| 2 | ni | 镍 | **+196.00%** | 35.50 | 57.1% | 0.737 |
+| 3 | l | 塑料 | **+74.81%** | 17.22 | 62.5% | 0.537 |
+| 4 | sr | 白糖 | **+46.36%** | 6.62 | 80.0% | 0.490 |
+| 5 | rm | 菜籽粕 | **+32.53%** | 14.40 | 57.1% | 0.377 |
 
-### 💡 结论
+### 日内模式（Intraday）- 当日平仓不过夜
 
-- 震荡行情中胜率较低（~40%）
-- 趋势行情中盈亏比优秀（可达 2:1+）
-- **核心问题**：缺少趋势过滤器，在震荡行情中入场过多
+| 排名 | 品种 | 名称 | 收益率% | 最大回撤% | 胜率% | 评分 |
+|------|------|------|---------|-----------|-------|------|
+| 1 | ni | 镍 | **+196.00%** | 35.50 | 57.1% | 0.734 |
+| 2 | pp | 聚丙烯 | **+93.79%** | 6.26 | 83.3% | 0.732 |
+| 3 | oi | 菜籽油 | **+23.94%** | 5.87 | 57.1% | 0.386 |
+| 4 | cf | 棉花 | **+9.64%** | 15.52 | 50.0% | 0.245 |
+| 5 | ru | 橡胶 | **+18.84%** | 8.18 | 40.0% | 0.222 |
 
-### 待优化方向
+### 关键发现
 
-- [ ] 增加趋势过滤器（只在大趋势中入场）
-- [ ] 加入供需区识别
-- [ ] 调整盈亏比目标（3:1）
-- [ ] 多品种组合策略
+1. **镍（ni）** 表现最为突出，收益率高达 **196%**，但回撤也较大（35.5%）
+2. **聚丙烯（pp）** 风险调整后表现最佳，收益率 93.79% 且回撤仅 6.26%
+3. **塑料（l）** 和 **白糖（sr）** 也表现稳健
+4. 农产品（玉米、豆粕）和国债期货在 2025 年表现较差
 
 ---
 
-## 🔧 开发指南
-
-### 编写自己的策略
-
-```python
-from china_futures_strategy import ChinaFuturesStrategy
-
-# 初始化策略
-strategy = ChinaFuturesStrategy(symbol='rb', risk_percent=0.02)
-
-# 分析当前市场
-result = strategy.analyze(opens, highs, lows, closes, idx)
-
-# result 包含:
-# - signal: 1(做多), -1(做空), 0(观望)
-# - trend: 'uptrend', 'downtrend', 'unknown'
-# - atr: 平均真实波幅
-# - pattern: 检测到的形态
-# - entry_price: 建议入场价
-# - stop_loss: 建议止损价
-```
-
-### 数据格式
+## 数据格式
 
 ```python
 # K线数据格式
@@ -211,17 +322,9 @@ data = {
 }
 ```
 
-### CSV 文件格式
-
-```csv
-date,open,high,low,close,volume
-2024-01-01,4500,4550,4480,4520,150000
-2024-01-02,4520,4580,4510,4560,180000
-```
-
 ---
 
-## 📝 注意事项
+## 注意事项
 
 1. **模拟交易**：本系统仅供学习研究，不构成投资建议
 2. **实盘风险**：期货交易风险巨大，请勿使用真实资金测试未经充分回测的策略
@@ -229,7 +332,7 @@ date,open,high,low,close,volume
 
 ---
 
-## 📜 License
+## License
 
 MIT License
 
