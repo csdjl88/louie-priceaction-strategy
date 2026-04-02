@@ -219,10 +219,14 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
     
     for i in range(30, len(dates)):
         result = strategy.analyze(opens, highs, lows, closes, i)
-        signal, trend, atr = result.get('signal', 0), result.get('trend', 'unknown'), result.get('atr', 0)
+        action = result.get('action', '')
+        # 兼容 signal 和 action 两种返回格式
+        signal_map = {'long': 1, 'short': -1}
+        signal = result.get('signal', signal_map.get(action, 0))
+        trend, atr = result.get('trend', 'unknown'), result.get('atr', 0)
         
         # 入场
-        if signal == 1 and position == 0:
+        if (signal == 1 or action == 'long') and position == 0:
             if atr > 0:
                 position_size = int((current_capital * risk_percent) / (atr * atr_stop * 10))
                 position = position_size
@@ -242,7 +246,7 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                 should_stop, reason = True, "ATR Stop Loss"
             elif closes[i] > entry_price + atr * atr_target:
                 should_stop, reason = True, "Take Profit"
-            elif signal == -1:
+            elif signal == -1 or action == 'short':
                 should_stop, reason = True, "Short Signal"
             
             if should_stop:

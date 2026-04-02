@@ -557,7 +557,7 @@ class ChinaFuturesStrategy:
             risk_percent: 单笔风险比例（默认2%）
             atr_period: ATR计算周期
             sma_period: 均线周期
-            atr_stop_multiplier: ATR止损倍数
+            atr_stop: ATR止损倍数
             lookback_period: 关键位回溯周期
             body_ratio: Pin Bar身体比例
             shadow_ratio: Pin Bar影子比例
@@ -570,7 +570,8 @@ class ChinaFuturesStrategy:
         self.risk_percent = risk_percent
         self.atr_period = atr_period
         self.sma_period = sma_period
-        self.atr_stop_multiplier = atr_stop_multiplier
+        self.atr_stop = atr_stop
+        self.atr_target = atr_target
         self.lookback_period = lookback_period
         self.body_ratio = body_ratio
         self.shadow_ratio = shadow_ratio
@@ -725,19 +726,21 @@ class ChinaFuturesStrategy:
         if direction == 'bullish':
             # 多头止损：跌破前低或ATR止损
             structure_stop = lowest(lows, self.lookback_period)
-            atr_stop = current_price - atr_value * self.atr_stop_multiplier
+            atr_stop = current_price - atr_value * self.atr_stop
             return max(structure_stop, atr_stop)
         else:
             # 空头止损：突破前高或ATR止损
             structure_stop = highest(highs, self.lookback_period)
-            atr_stop = current_price + atr_value * self.atr_stop_multiplier
+            atr_stop = current_price + atr_value * self.atr_stop
             return min(structure_stop, atr_stop)
     
     def calculate_take_profit(self, entry: float, stop_loss: float,
-                              direction: str, risk_reward: float = 2.0) -> float:
+                              direction: str, risk_reward: float = None) -> float:
         """
-        计算止盈位（默认2:1盈亏比）
+        计算止盈位（默认使用 atr_target 作为盈亏比）
         """
+        if risk_reward is None:
+            risk_reward = self.atr_target
         risk = abs(entry - stop_loss)
         
         if direction == 'bullish':
@@ -847,6 +850,8 @@ class ChinaFuturesStrategy:
                 # 不直接返回，但降低信心
             
             entry = closes[idx]
+            # 计算 ATR 并添加到结果
+            result['atr'] = atr(opens, highs, lows, closes, idx, period=self.atr_period)
             stop_loss = self.calculate_stop_loss(opens, closes, highs, lows, idx,
                                                direction, support, resistance)
             
@@ -870,6 +875,9 @@ class ChinaFuturesStrategy:
             else:
                 result['action'] = 'none'
                 result['reason'] = f"信心不足 ({result['confidence']:.0%}) 或盈亏比不佳 ({risk_reward:.2f})"
+        # 确保 ATR 在返回结果中
+        if 'atr' not in result:
+            result['atr'] = atr(opens, highs, lows, closes, idx, period=self.atr_period)
         
         return result
     
