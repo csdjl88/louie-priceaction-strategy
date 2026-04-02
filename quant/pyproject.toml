@@ -1,0 +1,11 @@
+[project]
+name = "quant"
+version = "0.1.0"
+description = "Price Action Trading System"
+requires-python = ">=3.11"
+dependencies = [
+    "akshare",
+]
+
+[tool.uv]
+dev-dependencies = []
