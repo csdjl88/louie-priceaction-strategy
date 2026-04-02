@@ -538,7 +538,7 @@ class ChinaFuturesStrategy:
     
     def __init__(self,
                  symbol: str = 'rb',
-                 risk_percent: float = 0.01,
+                 risk_percent: float = 0.05,  # 5%仓位（确保能开仓）
                  atr_period: int = 14,
                  sma_period: int = 50,
                  atr_stop: float = 2.0,

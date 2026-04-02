@@ -197,14 +197,16 @@ def load_csv_data(file_path: str) -> Optional[Dict]:
 
 
 def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
-                  risk_percent: float = 0.01, atr_stop: float = 2.0, atr_target: float = 6.0) -> Dict:
+                  risk_percent: float = 0.05, atr_stop: float = 2.0, atr_target: float = 6.0) -> Dict:
     """运行回测"""
     print(f"\n{'='*60}")
     print(f"  {symbol.upper()} 期货策略回测")
     print(f"{'='*60}")
     
     # 使用传入的参数
-    strategy = ChinaFuturesStrategy(symbol=symbol, risk_percent=risk_percent,
+    # 增大默认仓位到5%以确保能开仓（1%对螺纹钢等品种会导致仓位为0）
+    effective_risk = max(risk_percent, 0.05)
+    strategy = ChinaFuturesStrategy(symbol=symbol, risk_percent=effective_risk,
                                      atr_stop=atr_stop, atr_target=atr_target)
     
     dates, opens, highs, lows, closes = data['dates'], data['opens'], data['highs'], data['lows'], data['closes']
@@ -228,7 +230,9 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
         # 入场
         if (signal == 1 or action == 'long') and position == 0:
             if atr > 0:
-                position_size = int((current_capital * risk_percent) / (atr * atr_stop * 10))
+                position_size = int((current_capital * effective_risk) / (atr * atr_stop * 10))
+                if position_size <= 0:
+                    continue  # Skip if position size is 0
                 position = position_size
                 entry_price = closes[i]
                 trades.append({

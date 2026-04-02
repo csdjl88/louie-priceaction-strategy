@@ -1,0 +1,116 @@
+{
+  "summary": {
+    "symbol": "rb",
+    "total_trades": 9,
+    "winning_trades": 2,
+    "losing_trades": 7,
+    "win_rate": 22.22222222222222,
+    "initial_capital": 100000,
+    "final_capital": 82200.90000000001,
+    "total_pnl": -17799.09999999999,
+    "total_return": -17.79909999999999,
+    "max_drawdown": 19.265399999999993
+  },
+  "trade_count": 9,
+  "trades": [
+    {
+      "date": "2024-02-14",
+      "type": "LONG",
+      "entry_price": 3976.14,
+      "position": 1,
+      "stop_loss": 326.07857142857137,
+      "reason": "bullish trend, signal=1",
+      "exit_price": 3558.29,
+      "pnl": -4178.499999999999,
+      "exit_reason": "ATR Stop Loss"
+    },
+    {
+      "date": "2024-02-27",
+      "type": "LONG",
+      "entry_price": 3557.51,
+      "position": 1,
+      "stop_loss": 298.98999999999995,
+      "reason": "bullish trend, signal=1",
+      "exit_price": 3060.14,
+      "pnl": -4973.7000000000035,
+      "exit_reason": "ATR Stop Loss"
+    },
+    {
+      "date": "2024-03-05",
+      "type": "LONG",
+      "entry_price": 3075.83,
+      "position": 1,
+      "stop_loss": 294.9071428571428,
+      "reason": "bullish trend, signal=1",
+      "exit_price": 2750.2,
+      "pnl": -3256.300000000001,
+      "exit_reason": "ATR Stop Loss"
+    },
+    {
+      "date": "2024-03-13",
+      "type": "LONG",
+      "entry_price": 2732.87,
+      "position": 1,
+      "stop_loss": 347.72714285714295,
+      "reason": "bullish trend, signal=1",
+      "exit_price": 2435.72,
+      "pnl": -2971.500000000001,
+      "exit_reason": "ATR Stop Loss"
+    },
+    {
+      "date": "2024-05-13",
+      "type": "LONG",
+      "entry_price": 2444.27,
+      "position": 2,
+      "stop_loss": 204.92714285714277,
+      "reason": "bullish trend, signal=1",
+      "exit_price": 2250.0,
+      "pnl": -3885.3999999999996,
+      "exit_reason": "ATR Stop Loss"
+    },
+    {
+      "date": "2024-05-28",
+      "type": "LONG",
+      "entry_price": 2272.27,
+      "position": 2,
+      "stop_loss": 185.07285714285692,
+      "reason": "bullish trend, signal=1",
+      "exit_price": 2621.58,
+      "pnl": 6986.199999999999,
+      "exit_reason": "Take Profit"
+    },
+    {
+      "date": "2024-06-12",
+      "type": "LONG",
+      "entry_price": 2543.96,
+      "position": 2,
+      "stop_loss": 183.6657142857144,
+      "reason": "bullish trend, signal=1",
+      "exit_price": 2305.52,
+      "pnl": -4768.800000000001,
+      "exit_reason": "ATR Stop Loss"
+    },
+    {
+      "date": "2024-06-26",
+      "type": "LONG",
+      "entry_price": 2294.83,
+      "position": 1,
+      "stop_loss": 236.02428571428578,
+      "reason": "bullish trend, signal=1",
+      "exit_price": 2437.76,
+      "pnl": 1429.300000000003,
+      "exit_reason": "Take Profit"
+    },
+    {
+      "date": "2024-10-15",
+      "type": "LONG",
+      "entry_price": 2489.16,
+      "position": 2,
+      "stop_loss": 183.04571428571424,
+      "reason": "bullish trend, signal=1",
+      "exit_price": 2380.14,
+      "pnl": -2180.3999999999996,
+      "exit_reason": "End of Backtest"
+    }
+  ]
+}
