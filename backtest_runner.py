@@ -162,22 +162,29 @@ def load_csv_data(file_path: str) -> Optional[Dict]:
 
 def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                   risk_percent: float = 0.05, atr_stop: float = 2.0, atr_target: float = 6.0,
-                  trading_mode: str = "swing") -> Dict:
+                  trading_mode: str = "swing", atr_period: int = 14, sma_period: int = 50) -> Dict:
     """运行回测
     
     Args:
         trading_mode: 交易模式，"intraday"=日内平仓，"swing"=波段持仓
+        atr_period: ATR周期
+        sma_period: 均线周期
     """
     print(f"\n{'='*60}")
-    print(f"  {symbol.upper()} 期货策略回测 ({trading_mode}模式)")
+    print(f"  {symbol.upper()} 期货策略回测 (ATR:{atr_period}, SMA:{sma_period}, {trading_mode}模式)")
     print(f"{'='*60}")
     
-    # 使用传入的参数
     # 增大默认仓位到5%以确保能开仓（1%对螺纹钢等品种会导致仓位为0）
     effective_risk = max(risk_percent, 0.05)
-    strategy = ChinaFuturesStrategy(symbol=symbol, risk_percent=effective_risk,
-                                     atr_stop=atr_stop, atr_target=atr_target,
-                                     trading_mode=trading_mode)
+    strategy = ChinaFuturesStrategy(
+        symbol=symbol, 
+        risk_percent=effective_risk,
+        atr_period=atr_period,
+        sma_period=sma_period,
+        atr_stop=atr_stop, 
+        atr_target=atr_target,
+        trading_mode=trading_mode
+    )
     
     dates, opens, highs, lows, closes = data['dates'], data['opens'], data['highs'], data['lows'], data['closes']
     
@@ -346,6 +353,10 @@ def main():
     parser.add_argument('--capital', '-c', type=float, default=100000, help='初始资金')
     parser.add_argument('--mode', '-m', choices=['intraday', 'swing'], default='swing',
                         help='交易模式: intraday=日内平仓, swing=波段持仓')
+    parser.add_argument('--atr-period', type=int, default=14, help='ATR周期')
+    parser.add_argument('--atr-stop', type=float, default=2.0, help='ATR止损倍数')
+    parser.add_argument('--atr-target', type=float, default=6.0, help='ATR止盈倍数')
+    parser.add_argument('--sma-period', type=int, default=50, help='均线周期')
     
     args = parser.parse_args()
     
@@ -363,7 +374,10 @@ def main():
     else:
         data = generate_simulated_data(args.symbol, args.days)
     
-    result = run_backtest(data, args.symbol, args.capital, trading_mode=args.mode)
+    result = run_backtest(data, args.symbol, args.capital, 
+                          atr_stop=args.atr_stop, atr_target=args.atr_target,
+                          trading_mode=args.mode, 
+                          atr_period=args.atr_period, sma_period=args.sma_period)
     
     # 保存结果
     result_file = f"backtest_result_{args.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
