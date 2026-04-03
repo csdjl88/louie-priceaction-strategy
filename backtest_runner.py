@@ -224,8 +224,12 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
     
     dates, opens, highs, lows, closes = data['dates'], data['opens'], data['highs'], data['lows'], data['closes']
     
+    # 提取日期部分用于日内判断
+    date_only = [d.split()[0] if ' ' in str(d) else str(d) for d in dates]
+    
     trades, equity_curve = [], [initial_capital]
     current_capital, position, entry_price = initial_capital, 0, 0
+    entry_date = None  # 记录入场日期，用于判断是否跨日
     
     print(f"\n数据范围: {dates[0]} ~ {dates[-1]}")
     print(f"数据条数: {len(dates)} 根K线")
@@ -253,10 +257,14 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                 else:
                     return price * abs(size) * contract_size * commission_rate
             
+            # 记录入场日期
+            current_date = date_only[i] if i < len(date_only) else str(dates[i])
+            
             # 做多 - 考虑滑点（滑点会增加入场成本）
             if signal == 1 or action == 'long':
                 entry_price = closes[i] * (1 + slippage)  # 滑点让入场价更高
                 position = position_size
+                entry_date = current_date  # 记录入场日期
                 # 入场时扣除手续费
                 entry_commission = calc_commission(entry_price, position)
                 current_capital -= entry_commission
@@ -264,12 +272,14 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                     'date': dates[i], 'type': 'LONG', 'entry_price': entry_price,
                     'position': position, 'stop_loss': atr * atr_stop,
                     'commission': entry_commission,
+                    'entry_date': entry_date,
                     'reason': f"{trend} trend, signal={signal}"
                 })
             # 做空 - 考虑滑点
             elif signal == -1 or action == 'short':
                 entry_price = closes[i] * (1 - slippage)  # 滑点让入场价更低
                 position = -position_size
+                entry_date = current_date  # 记录入场日期
                 # 入场时扣除手续费
                 entry_commission = calc_commission(entry_price, position)
                 current_capital -= entry_commission
@@ -277,6 +287,7 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                     'date': dates[i], 'type': 'SHORT', 'entry_price': entry_price,
                     'position': position, 'stop_loss': atr * atr_stop,
                     'commission': entry_commission,
+                    'entry_date': entry_date,
                     'reason': f"{trend} trend, signal={signal}"
                 })
         
@@ -287,15 +298,19 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                 pnl = (closes[i] - entry_price) * position * 10
                 should_stop, reason = False, ""
                 
-                # 日内模式：检测是否需要强制平仓
-                force_close = result.get('session_end_force_close', False)
+                # 日内模式：检测是否需要强制平仓（同一天必须平仓）
+                current_date = date_only[i] if i < len(date_only) else str(dates[i])
+                force_close = False
+                if trading_mode == 'intraday' and entry_date and current_date != entry_date:
+                    force_close = True
+                    reason = "Intraday Close (EOD)"
                 
                 if closes[i] < entry_price - atr * atr_stop:
                     should_stop, reason = True, "ATR Stop Loss"
                 elif closes[i] > entry_price + atr * atr_target:
                     should_stop, reason = True, "Take Profit"
                 elif force_close:
-                    should_stop, reason = True, "Intraday Close"
+                    should_stop, reason = True, reason
                 elif signal == -1 or action == 'short':
                     should_stop, reason = True, "Reverse to Short"
             # 空头出场
@@ -303,15 +318,19 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                 pnl = (entry_price - closes[i]) * abs(position) * 10
                 should_stop, reason = False, ""
                 
-                # 日内模式：检测是否需要强制平仓
-                force_close = result.get('session_end_force_close', False)
+                # 日内模式：检测是否需要强制平仓（同一天必须平仓）
+                current_date = date_only[i] if i < len(date_only) else str(dates[i])
+                force_close = False
+                if trading_mode == 'intraday' and entry_date and current_date != entry_date:
+                    force_close = True
+                    reason = "Intraday Close (EOD)"
                 
                 if closes[i] > entry_price + atr * atr_stop:
                     should_stop, reason = True, "ATR Stop Loss"
                 elif closes[i] < entry_price - atr * atr_target:
                     should_stop, reason = True, "Take Profit"
                 elif force_close:
-                    should_stop, reason = True, "Intraday Close"
+                    should_stop, reason = True, reason
                 elif signal == 1 or action == 'long':
                     should_stop, reason = True, "Reverse to Long"
             
@@ -322,6 +341,9 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                 else:
                     exit_price = closes[i] * (1 + slippage)  # 滑点让出场价更高
                 
+                exit_date = date_only[i] if i < len(date_only) else str(dates[i])
+                is_intraday = entry_date and exit_date == entry_date
+                
                 # 出场手续费
                 exit_commission = calc_commission(exit_price, position)
                 net_pnl = pnl - exit_commission
@@ -331,9 +353,12 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                     'exit_price': exit_price, 
                     'pnl': net_pnl, 
                     'exit_commission': exit_commission,
+                    'exit_date': exit_date,
+                    'intraday': is_intraday,
                     'exit_reason': reason
                 })
                 position, entry_price = 0, 0
+                entry_date = None
         
         equity_curve.append(current_capital)
     
