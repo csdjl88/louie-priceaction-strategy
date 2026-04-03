@@ -28,58 +28,84 @@ from typing import Dict, List, Optional, Tuple, Any
 
 
 # ==================== 国内期货品种配置 ====================
+# 手续费说明 (交易所标准，期货公司可能加收):
+# - 万分比: 手续费 = 合约价格 × contract_size × commission_rate
+# - 固定金额: 固定手续费/手 (如黄金20元)
+# 
+# 交易费率 (2024年最新):
+# | 品种 | 代码 | 手续费 | 备注 |
+# |:---:|:---:|:---:|:---|
+# | 螺纹钢 | rb | 万0.1 | 约4.5元/手 |
+# | 热卷 | hc | 万0.1 | 约4.5元/手 |
+# | 铁矿石 | i | 万0.1 | 10元/手 |
+# | 焦炭 | j | 万0.1 | 约18元/手 |
+# | 焦煤 | jm | 万0.1 | 约12元/手 |
+# | 铜 | cu | 万0.5 | 约34元/手 |
+# | 铝 | al | 万3 | 约9元/手 |
+# | 锌 | zn | 万3 | 约12元/手 |
+# | 镍 | ni | 万3 | 约12元/手 |
+# | 锡 | sn | 万3 | 约18元/手 |
+# | 橡胶 | ru | 万0.45 | 约9元/手 |
+# | 沥青 | bu | 万1 | 约3.5元/手 |
+# | 甲醇 | ma | 万2 | 约4元/手 |
+# | PTA | ta | 万3 | 约4.5元/手 |
+# | 纯碱 | TA | 万2 | 约8元/手 |
+# | 原油 | sc | 万2.5 | 约22.5元/手 |
+# | 黄金 | au | 20元/手 | 固定 |
+# | 白银 | ag | 万0.5 | 约4元/手 |
 
 FUTURES_CONFIG = {
     # 黑色系
-    'rb': {'name': '螺纹钢', 'session': 'full', 'tick_size': 1, 'contract_size': 10},
-    'hc': {'name': '热轧卷板', 'session': 'full', 'tick_size': 1, 'contract_size': 10},
-    'i': {'name': '铁矿石', 'session': 'full', 'tick_size': 0.5, 'contract_size': 100},
-    'j': {'name': '焦炭', 'session': 'full', 'tick_size': 0.5, 'contract_size': 100},
-    'jm': {'name': '焦煤', 'session': 'full', 'tick_size': 0.5, 'contract_size': 60},
+    'rb': {'name': '螺纹钢', 'session': 'full', 'tick_size': 1, 'contract_size': 10, 'commission': 0.0001, 'commission_type': 'ratio'},
+    'hc': {'name': '热轧卷板', 'session': 'full', 'tick_size': 1, 'contract_size': 10, 'commission': 0.0001, 'commission_type': 'ratio'},
+    'i': {'name': '铁矿石', 'session': 'full', 'tick_size': 0.5, 'contract_size': 100, 'commission': 0.0001, 'commission_type': 'ratio'},
+    'j': {'name': '焦炭', 'session': 'full', 'tick_size': 0.5, 'contract_size': 100, 'commission': 0.0001, 'commission_type': 'ratio'},
+    'jm': {'name': '焦煤', 'session': 'full', 'tick_size': 0.5, 'contract_size': 60, 'commission': 0.0001, 'commission_type': 'ratio'},
     
     # 有色金属
-    'cu': {'name': '铜', 'session': 'full', 'tick_size': 10, 'contract_size': 5},
-    'al': {'name': '铝', 'session': 'full', 'tick_size': 5, 'contract_size': 5},
-    'zn': {'name': '锌', 'session': 'full', 'tick_size': 5, 'contract_size': 5},
-    'ni': {'name': '镍', 'session': 'full', 'tick_size': 10, 'contract_size': 1},
-    'sn': {'name': '锡', 'session': 'full', 'tick_size': 10, 'contract_size': 1},
+    'cu': {'name': '铜', 'session': 'full', 'tick_size': 10, 'contract_size': 5, 'commission': 0.0005, 'commission_type': 'ratio'},
+    'al': {'name': '铝', 'session': 'full', 'tick_size': 5, 'contract_size': 5, 'commission': 0.0003, 'commission_type': 'ratio'},
+    'zn': {'name': '锌', 'session': 'full', 'tick_size': 5, 'contract_size': 5, 'commission': 0.0003, 'commission_type': 'ratio'},
+    'ni': {'name': '镍', 'session': 'full', 'tick_size': 10, 'contract_size': 1, 'commission': 0.0003, 'commission_type': 'ratio'},
+    'sn': {'name': '锡', 'session': 'full', 'tick_size': 10, 'contract_size': 1, 'commission': 0.0003, 'commission_type': 'ratio'},
     
     # 化工系
-    'ru': {'name': '橡胶', 'session': 'full', 'tick_size': 5, 'contract_size': 10},
-    'bu': {'name': '沥青', 'session': 'full', 'tick_size': 2, 'contract_size': 10},
-    'ma': {'name': '甲醇', 'session': 'full', 'tick_size': 1, 'contract_size': 10},
-    'ta': {'name': 'PTA', 'session': 'full', 'tick_size': 2, 'contract_size': 5},
-    'pp': {'name': '聚丙烯', 'session': 'full', 'tick_size': 1, 'contract_size': 5},
-    'l': {'name': '塑料', 'session': 'full', 'tick_size': 5, 'contract_size': 5},
-    'v': {'name': 'PVC', 'session': 'full', 'tick_size': 5, 'contract_size': 5},
+    'ru': {'name': '橡胶', 'session': 'full', 'tick_size': 5, 'contract_size': 10, 'commission': 0.000045, 'commission_type': 'ratio'},
+    'bu': {'name': '沥青', 'session': 'full', 'tick_size': 2, 'contract_size': 10, 'commission': 0.0001, 'commission_type': 'ratio'},
+    'ma': {'name': '甲醇', 'session': 'full', 'tick_size': 1, 'contract_size': 10, 'commission': 0.0002, 'commission_type': 'ratio'},
+    'ta': {'name': 'PTA', 'session': 'full', 'tick_size': 2, 'contract_size': 5, 'commission': 0.0003, 'commission_type': 'ratio'},
+    'ta0': {'name': 'PTA', 'session': 'full', 'tick_size': 2, 'contract_size': 5, 'commission': 0.0002, 'commission_type': 'ratio'},  # 纯碱
+    'pp': {'name': '聚丙烯', 'session': 'full', 'tick_size': 1, 'contract_size': 5, 'commission': 0.0001, 'commission_type': 'ratio'},
+    'l': {'name': '塑料', 'session': 'full', 'tick_size': 5, 'contract_size': 5, 'commission': 0.0001, 'commission_type': 'ratio'},
+    'v': {'name': 'PVC', 'session': 'full', 'tick_size': 5, 'contract_size': 5, 'commission': 0.0001, 'commission_type': 'ratio'},
     
     # 农产品
-    'm': {'name': '豆粕', 'session': 'full', 'tick_size': 1, 'contract_size': 10},
-    'y': {'name': '豆油', 'session': 'full', 'tick_size': 2, 'contract_size': 10},
-    'p': {'name': '棕榈油', 'session': 'full', 'tick_size': 2, 'contract_size': 10},
-    'cs': {'name': '玉米淀粉', 'session': 'day', 'tick_size': 1, 'contract_size': 10},
-    'c': {'name': '玉米', 'session': 'day', 'tick_size': 1, 'contract_size': 10},
-    'a': {'name': '黄大豆', 'session': 'day', 'tick_size': 1, 'contract_size': 10},
-    'b': {'name': '黄大豆', 'session': 'day', 'tick_size': 1, 'contract_size': 10},
+    'm': {'name': '豆粕', 'session': 'full', 'tick_size': 1, 'contract_size': 10, 'commission': 0.0001, 'commission_type': 'ratio'},
+    'y': {'name': '豆油', 'session': 'full', 'tick_size': 2, 'contract_size': 10, 'commission': 0.0002, 'commission_type': 'ratio'},
+    'p': {'name': '棕榈油', 'session': 'full', 'tick_size': 2, 'contract_size': 10, 'commission': 0.00025, 'commission_type': 'ratio'},
+    'cs': {'name': '玉米淀粉', 'session': 'day', 'tick_size': 1, 'contract_size': 10, 'commission': 0.00012, 'commission_type': 'ratio'},
+    'c': {'name': '玉米', 'session': 'day', 'tick_size': 1, 'contract_size': 10, 'commission': 0.00012, 'commission_type': 'ratio'},
+    'a': {'name': '黄大豆', 'session': 'day', 'tick_size': 1, 'contract_size': 10, 'commission': 0.0002, 'commission_type': 'ratio'},
+    'b': {'name': '黄大豆', 'session': 'day', 'tick_size': 1, 'contract_size': 10, 'commission': 0.0002, 'commission_type': 'ratio'},
     
     # 油脂
-    'oi': {'name': '菜籽油', 'session': 'full', 'tick_size': 1, 'contract_size': 10},
-    'rm': {'name': '菜籽粕', 'session': 'day', 'tick_size': 1, 'contract_size': 10},
+    'oi': {'name': '菜籽油', 'session': 'full', 'tick_size': 1, 'contract_size': 10, 'commission': 0.0002, 'commission_type': 'ratio'},
+    'rm': {'name': '菜籽粕', 'session': 'day', 'tick_size': 1, 'contract_size': 10, 'commission': 0.00015, 'commission_type': 'ratio'},
     
     # 软商品
-    'cf': {'name': '棉花', 'session': 'day', 'tick_size': 5, 'contract_size': 5},
-    'sr': {'name': '白糖', 'session': 'day', 'tick_size': 1, 'contract_size': 10},
+    'cf': {'name': '棉花', 'session': 'day', 'tick_size': 5, 'contract_size': 5, 'commission': 0.00024, 'commission_type': 'ratio'},
+    'sr': {'name': '白糖', 'session': 'day', 'tick_size': 1, 'contract_size': 10, 'commission': 0.00024, 'commission_type': 'ratio'},
     
     # 贵金属
-    'au': {'name': '黄金', 'session': 'full', 'tick_size': 0.02, 'contract_size': 1000},
-    'ag': {'name': '白银', 'session': 'full', 'tick_size': 1, 'contract_size': 15},
+    'au': {'name': '黄金', 'session': 'full', 'tick_size': 0.02, 'contract_size': 1000, 'commission': 20, 'commission_type': 'fixed'},
+    'ag': {'name': '白银', 'session': 'full', 'tick_size': 1, 'contract_size': 15, 'commission': 0.00005, 'commission_type': 'ratio'},
     
     # 能源
-    'sc': {'name': '原油', 'session': 'full', 'tick_size': 0.1, 'contract_size': 1000},
+    'sc': {'name': '原油', 'session': 'full', 'tick_size': 0.1, 'contract_size': 1000, 'commission': 0.00025, 'commission_type': 'ratio'},
     
     # 国债
-    't': {'name': '10年期国债', 'session': 'day', 'tick_size': 0.005, 'contract_size': 10000},
-    'tf': {'name': '5年期国债', 'session': 'day', 'tick_size': 0.005, 'contract_size': 10000},
+    't': {'name': '10年期国债', 'session': 'day', 'tick_size': 0.005, 'contract_size': 10000, 'commission': 0.00012, 'commission_type': 'ratio'},
+    'tf': {'name': '5年期国债', 'session': 'day', 'tick_size': 0.005, 'contract_size': 10000, 'commission': 0.00012, 'commission_type': 'ratio'},
 }
 
 # 交易时段配置

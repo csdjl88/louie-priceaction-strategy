@@ -163,20 +163,51 @@ def load_csv_data(file_path: str) -> Optional[Dict]:
 def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                   risk_percent: float = 0.05, atr_stop: float = 2.0, atr_target: float = 6.0,
                   trading_mode: str = "swing", atr_period: int = 14, sma_period: int = 50,
-                  commission: float = 0.0001, slippage: float = 0.0005) -> Dict:
+                  commission: float = None, slippage: float = 0.0005) -> Dict:
     """运行回测
     
     Args:
         trading_mode: 交易模式，"intraday"=日内平仓，"swing"=波段持仓
         atr_period: ATR周期
         sma_period: 均线周期
-        commission: 手续费比例 (默认万1)
+        commission: 手续费比例 (None=使用品种默认配置)
         slippage: 滑点比例 (默认万分之5)
     """
+    # 获取品种配置
+    from china_futures_strategy import FUTURES_CONFIG
+    # 尝试多种匹配方式
+    symbol_lower = symbol.lower()
+    config = FUTURES_CONFIG.get(symbol_lower)  # 如 RB0, RU0
+    if config is None:
+        config = FUTURES_CONFIG.get(symbol_lower.replace('0', ''))  # 如 rb, ru
+    if config is None:
+        config = FUTURES_CONFIG.get(symbol_lower + '0')  # 如 rb0 -> rb0
+    if config is None:
+        config = {}  # 默认配置
+    
+    # 确定手续费
+    if commission is None:
+        if config.get('commission_type') == 'fixed':
+            # 固定手续费（如黄金20元/手）
+            commission_rate = config.get('commission', 20)
+            commission_type = 'fixed'
+        else:
+            # 按比例收费（默认万1）
+            commission_rate = config.get('commission', 0.0001)
+            commission_type = 'ratio'
+    else:
+        commission_rate = commission
+        commission_type = 'ratio'
+    
+    contract_size = config.get('contract_size', 10)
+    
     print(f"\n{'='*60}")
     print(f"  {symbol.upper()} 期货策略回测")
     print(f"  参数: ATR={atr_period}, SMA={sma_period}, {trading_mode}模式")
-    print(f"  成本: 手续费={commission*10000:.1f}‰, 滑点={slippage*10000:.1f}‰")
+    if commission_type == 'fixed':
+        print(f"  成本: 手续费={commission_rate}元/手, 滑点={slippage*10000:.1f}‰")
+    else:
+        print(f"  成本: 手续费={commission_rate*10000:.2f}‰, 滑点={slippage*10000:.1f}‰")
     print(f"{'='*60}")
     
     # 增大默认仓位到5%以确保能开仓（1%对螺纹钢等品种会导致仓位为0）
@@ -215,12 +246,19 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
             if position_size <= 0:
                 position_size = 1  # 最小仓位
             
+            # 计算手续费函数
+            def calc_commission(price, size):
+                if commission_type == 'fixed':
+                    return commission_rate * abs(size)  # 固定手续费 × 手数
+                else:
+                    return price * abs(size) * contract_size * commission_rate
+            
             # 做多 - 考虑滑点（滑点会增加入场成本）
             if signal == 1 or action == 'long':
                 entry_price = closes[i] * (1 + slippage)  # 滑点让入场价更高
                 position = position_size
                 # 入场时扣除手续费
-                entry_commission = entry_price * position * 10 * commission
+                entry_commission = calc_commission(entry_price, position)
                 current_capital -= entry_commission
                 trades.append({
                     'date': dates[i], 'type': 'LONG', 'entry_price': entry_price,
@@ -233,7 +271,7 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                 entry_price = closes[i] * (1 - slippage)  # 滑点让入场价更低
                 position = -position_size
                 # 入场时扣除手续费
-                entry_commission = entry_price * abs(position) * 10 * commission
+                entry_commission = calc_commission(entry_price, position)
                 current_capital -= entry_commission
                 trades.append({
                     'date': dates[i], 'type': 'SHORT', 'entry_price': entry_price,
@@ -285,7 +323,7 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                     exit_price = closes[i] * (1 + slippage)  # 滑点让出场价更高
                 
                 # 出场手续费
-                exit_commission = abs(exit_price) * abs(position) * 10 * commission
+                exit_commission = calc_commission(exit_price, position)
                 net_pnl = pnl - exit_commission
                 
                 current_capital += net_pnl
@@ -303,14 +341,14 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
     if position > 0:
         exit_price = closes[-1] * (1 - slippage)
         pnl = (exit_price - entry_price) * position * 10
-        exit_commission = exit_price * abs(position) * 10 * commission
+        exit_commission = calc_commission(exit_price, position)
         net_pnl = pnl - exit_commission
         current_capital += net_pnl
         trades[-1].update({'exit_price': exit_price, 'pnl': net_pnl, 'exit_commission': exit_commission, 'exit_reason': 'End of Backtest'})
     elif position < 0:
         exit_price = closes[-1] * (1 + slippage)
         pnl = (entry_price - exit_price) * abs(position) * 10
-        exit_commission = exit_price * abs(position) * 10 * commission
+        exit_commission = calc_commission(exit_price, position)
         net_pnl = pnl - exit_commission
         current_capital += net_pnl
         trades[-1].update({'exit_price': exit_price, 'pnl': net_pnl, 'exit_commission': exit_commission, 'exit_reason': 'End of Backtest'})
@@ -391,7 +429,7 @@ def main():
     parser.add_argument('--atr-stop', type=float, default=2.0, help='ATR止损倍数')
     parser.add_argument('--atr-target', type=float, default=6.0, help='ATR止盈倍数')
     parser.add_argument('--sma-period', type=int, default=50, help='均线周期')
-    parser.add_argument('--commission', type=float, default=0.0001, help='手续费比例 (默认万1)')
+    parser.add_argument('--commission', type=float, default=None, help='手续费 (默认使用品种配置)')
     parser.add_argument('--slippage', type=float, default=0.0005, help='滑点比例 (默认万分之5)')
     
     args = parser.parse_args()
