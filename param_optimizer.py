@@ -312,6 +312,109 @@ def print_optimization_report(results: List[OptimizationResult], top_n: int = 10
     print(f"{'='*80}")
 
 
+def save_optimization_history(symbol: str, best_params: Dict, results: List[OptimizationResult], 
+                             method: str = 'grid', history_file: str = 'optimization_history.json'):
+    """
+    保存优化结果到历史记录
+    
+    Args:
+        symbol: 品种代码
+        best_params: 最佳参数
+        results: 所有优化结果
+        method: 优化方法
+        history_file: 历史记录文件
+    """
+    from datetime import datetime
+    
+    # 读取现有历史
+    import os
+    history = []
+    if os.path.exists(history_file):
+        try:
+            with open(history_file, 'r', encoding='utf-8') as f:
+                history = json.load(f)
+        except:
+            history = []
+    
+    # 构建记录
+    record = {
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'symbol': symbol,
+        'method': method,
+        'best_params': best_params,
+        'total_results': len(results),
+        'best_result': {
+            'return_pct': results[0].total_return if results else 0,
+            'win_rate': results[0].win_rate if results else 0,
+            'max_drawdown': results[0].max_drawdown if results else 0,
+            'score': results[0].score if results else 0,
+            'trades': results[0].total_trades if results else 0
+        } if results else {}
+    }
+    
+    # 添加到历史
+    history.insert(0, record)
+    
+    # 只保留最近50条
+    history = history[:50]
+    
+    # 保存
+    with open(history_file, 'w', encoding='utf-8') as f:
+        json.dump(history, f, indent=2, ensure_ascii=False)
+    
+    print(f"\n优化历史已保存到: {history_file}")
+    return history
+
+
+def load_optimization_history(symbol: str = None, history_file: str = 'optimization_history.json') -> List[Dict]:
+    """
+    加载优化历史记录
+    
+    Args:
+        symbol: 可选的品种过滤
+        history_file: 历史记录文件
+    
+    Returns:
+        历史记录列表
+    """
+    import os
+    if not os.path.exists(history_file):
+        return []
+    
+    try:
+        with open(history_file, 'r', encoding='utf-8') as f:
+            history = json.load(f)
+    except:
+        return []
+    
+    if symbol:
+        history = [h for h in history if h.get('symbol') == symbol]
+    
+    return history
+
+
+def print_optimization_history(symbol: str = None, history_file: str = 'optimization_history.json'):
+    """打印优化历史"""
+    history = load_optimization_history(symbol, history_file)
+    
+    if not history:
+        print("无优化历史记录")
+        return
+    
+    print(f"\n{'='*80}")
+    print(f"  优化历史记录 (共 {len(history)} 条)")
+    if symbol:
+        print(f"  品种: {symbol}")
+    print(f"{'='*80}")
+    print(f"{'时间':<20}{'品种':<8}{'方法':<8}{'收益率':<12}{'胜率':<10}{'评分':<8}")
+    print("-" * 80)
+    
+    for h in history[:20]:
+        r = h.get('best_result', {})
+        print(f"{h['timestamp']:<20}{h['symbol']:<8}{h['method']:<8}"
+              f"{r.get('return_pct', 0):<12.2f}{r.get('win_rate', 0)*100:<10.1f}{r.get('score', 0):<8.3f}")
+
+
 # CLI 入口
 if __name__ == '__main__':
     import argparse
@@ -322,11 +425,20 @@ if __name__ == '__main__':
     parser.add_argument('--method', '-m', choices=['grid', 'random'], default='grid',
                         help='优化方法')
     parser.add_argument('--top', '-t', type=int, default=10, help='显示Top N')
+    parser.add_argument('--save', action='store_true', help='保存优化结果到历史')
+    parser.add_argument('--history', action='store_true', help='查看优化历史')
     
     args = parser.parse_args()
     
-    # 运行优化
-    best_params, results = optimize_strategy(args.symbol, args.days, args.method)
-    
-    # 打印报告
-    print_optimization_report(results, args.top)
+    if args.history:
+        print_optimization_history(args.symbol)
+    else:
+        # 运行优化
+        best_params, results = optimize_strategy(args.symbol, args.days, args.method)
+        
+        # 打印报告
+        print_optimization_report(results, args.top)
+        
+        # 保存历史
+        if args.save:
+            save_optimization_history(args.symbol, best_params, results, args.method)
