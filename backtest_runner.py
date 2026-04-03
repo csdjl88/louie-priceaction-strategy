@@ -162,16 +162,21 @@ def load_csv_data(file_path: str) -> Optional[Dict]:
 
 def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                   risk_percent: float = 0.05, atr_stop: float = 2.0, atr_target: float = 6.0,
-                  trading_mode: str = "swing", atr_period: int = 14, sma_period: int = 50) -> Dict:
+                  trading_mode: str = "swing", atr_period: int = 14, sma_period: int = 50,
+                  commission: float = 0.0001, slippage: float = 0.0005) -> Dict:
     """运行回测
     
     Args:
         trading_mode: 交易模式，"intraday"=日内平仓，"swing"=波段持仓
         atr_period: ATR周期
         sma_period: 均线周期
+        commission: 手续费比例 (默认万1)
+        slippage: 滑点比例 (默认万分之5)
     """
     print(f"\n{'='*60}")
-    print(f"  {symbol.upper()} 期货策略回测 (ATR:{atr_period}, SMA:{sma_period}, {trading_mode}模式)")
+    print(f"  {symbol.upper()} 期货策略回测")
+    print(f"  参数: ATR={atr_period}, SMA={sma_period}, {trading_mode}模式")
+    print(f"  成本: 手续费={commission*10000:.1f}‰, 滑点={slippage*10000:.1f}‰")
     print(f"{'='*60}")
     
     # 增大默认仓位到5%以确保能开仓（1%对螺纹钢等品种会导致仓位为0）
@@ -210,22 +215,30 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
             if position_size <= 0:
                 position_size = 1  # 最小仓位
             
-            # 做多
+            # 做多 - 考虑滑点（滑点会增加入场成本）
             if signal == 1 or action == 'long':
+                entry_price = closes[i] * (1 + slippage)  # 滑点让入场价更高
                 position = position_size
-                entry_price = closes[i]
+                # 入场时扣除手续费
+                entry_commission = entry_price * position * 10 * commission
+                current_capital -= entry_commission
                 trades.append({
                     'date': dates[i], 'type': 'LONG', 'entry_price': entry_price,
                     'position': position, 'stop_loss': atr * atr_stop,
+                    'commission': entry_commission,
                     'reason': f"{trend} trend, signal={signal}"
                 })
-            # 做空
+            # 做空 - 考虑滑点
             elif signal == -1 or action == 'short':
-                position = -position_size  # 负数表示空头
-                entry_price = closes[i]
+                entry_price = closes[i] * (1 - slippage)  # 滑点让入场价更低
+                position = -position_size
+                # 入场时扣除手续费
+                entry_commission = entry_price * abs(position) * 10 * commission
+                current_capital -= entry_commission
                 trades.append({
                     'date': dates[i], 'type': 'SHORT', 'entry_price': entry_price,
                     'position': position, 'stop_loss': atr * atr_stop,
+                    'commission': entry_commission,
                     'reason': f"{trend} trend, signal={signal}"
                 })
         
@@ -265,21 +278,42 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                     should_stop, reason = True, "Reverse to Long"
             
             if should_stop:
-                current_capital += pnl
-                trades[-1].update({'exit_price': closes[i], 'pnl': pnl, 'exit_reason': reason})
+                # 出场时考虑滑点
+                if position > 0:
+                    exit_price = closes[i] * (1 - slippage)  # 滑点让出场价更低
+                else:
+                    exit_price = closes[i] * (1 + slippage)  # 滑点让出场价更高
+                
+                # 出场手续费
+                exit_commission = abs(exit_price) * abs(position) * 10 * commission
+                net_pnl = pnl - exit_commission
+                
+                current_capital += net_pnl
+                trades[-1].update({
+                    'exit_price': exit_price, 
+                    'pnl': net_pnl, 
+                    'exit_commission': exit_commission,
+                    'exit_reason': reason
+                })
                 position, entry_price = 0, 0
         
         equity_curve.append(current_capital)
     
-    # 平仓
+    # 平仓（最后持仓按收盘价平掉）
     if position > 0:
-        pnl = (closes[-1] - entry_price) * position * 10
-        current_capital += pnl
-        trades[-1].update({'exit_price': closes[-1], 'pnl': pnl, 'exit_reason': 'End of Backtest'})
+        exit_price = closes[-1] * (1 - slippage)
+        pnl = (exit_price - entry_price) * position * 10
+        exit_commission = exit_price * abs(position) * 10 * commission
+        net_pnl = pnl - exit_commission
+        current_capital += net_pnl
+        trades[-1].update({'exit_price': exit_price, 'pnl': net_pnl, 'exit_commission': exit_commission, 'exit_reason': 'End of Backtest'})
     elif position < 0:
-        pnl = (entry_price - closes[-1]) * abs(position) * 10
-        current_capital += pnl
-        trades[-1].update({'exit_price': closes[-1], 'pnl': pnl, 'exit_reason': 'End of Backtest'})
+        exit_price = closes[-1] * (1 + slippage)
+        pnl = (entry_price - exit_price) * abs(position) * 10
+        exit_commission = exit_price * abs(position) * 10 * commission
+        net_pnl = pnl - exit_commission
+        current_capital += net_pnl
+        trades[-1].update({'exit_price': exit_price, 'pnl': net_pnl, 'exit_commission': exit_commission, 'exit_reason': 'End of Backtest'})
     
     # 统计
     total_trades = len(trades)
@@ -357,6 +391,8 @@ def main():
     parser.add_argument('--atr-stop', type=float, default=2.0, help='ATR止损倍数')
     parser.add_argument('--atr-target', type=float, default=6.0, help='ATR止盈倍数')
     parser.add_argument('--sma-period', type=int, default=50, help='均线周期')
+    parser.add_argument('--commission', type=float, default=0.0001, help='手续费比例 (默认万1)')
+    parser.add_argument('--slippage', type=float, default=0.0005, help='滑点比例 (默认万分之5)')
     
     args = parser.parse_args()
     
@@ -377,7 +413,8 @@ def main():
     result = run_backtest(data, args.symbol, args.capital, 
                           atr_stop=args.atr_stop, atr_target=args.atr_target,
                           trading_mode=args.mode, 
-                          atr_period=args.atr_period, sma_period=args.sma_period)
+                          atr_period=args.atr_period, sma_period=args.sma_period,
+                          commission=args.commission, slippage=args.slippage)
     
     # 保存结果
     result_file = f"backtest_result_{args.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
