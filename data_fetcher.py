@@ -3,7 +3,7 @@ data_fetcher.py - 多品种期货数据获取和缓存模块
 ==============================================
 
 支持:
-1. AkShare 东方财富期货数据（真实数据）
+1. Sina 期货 API (通过 curl)
 2. 模拟数据（网络不可用时）
 
 使用方法:
@@ -19,16 +19,12 @@ data_fetcher.py - 多品种期货数据获取和缓存模块
     multi_data = fetch_multi_futures_data(symbols=['rb', 'cu', 'au'], days=300)
 """
 
+import json
 import random
+import re
+import subprocess
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-
-try:
-    import akshare as ak
-    from akshare.futures.futures_zh_sina import futures_zh_daily_sina
-    AKSHARE_AVAILABLE = True
-except ImportError:
-    AKSHARE_AVAILABLE = False
 
 from china_futures_strategy import FUTURES_CONFIG
 
@@ -61,73 +57,78 @@ def fetch_futures_data(symbol: str, days: int = 300) -> Optional[Dict]:
     if symbol.lower() not in FUTURES_CONFIG:
         return None
 
-    # 尝试使用 AkShare
-    if AKSHARE_AVAILABLE:
-        data = _fetch_akshare_futures(symbol, days)
-        if data is not None:
-            return data
+    # 尝试使用 Sina API
+    data = _fetch_sina_futures(symbol, days)
+    if data is not None:
+        return data
 
     # 回退到模拟数据
     return _generate_simulated_data(symbol, days)
 
 
-def _fetch_akshare_futures(symbol: str, days: int = 300) -> Optional[Dict]:
-    """使用 AkShare 获取期货数据
-
-    使用 2025 年 12 月合约来获取完整的 2025 年数据
+def _fetch_sina_futures(symbol: str, days: int = 300) -> Optional[Dict]:
+    """使用 Sina API 获取期货数据（通过 curl）
+    
+    由于 AkShare 的 Sina 接口失效，改为直接用 curl 调用 Sina API
     """
-    if not AKSHARE_AVAILABLE:
-        return None
-
-    # 2025 年 12 月到期的合约映射，覆盖完整 2025 年
-    _CONTRACT_2025 = {
-        'rb': 'rb2512', 'hc': 'hc2512', 'i': 'i2512', 'j': 'j2512', 'jm': 'jm2512',
-        'cu': 'cu2512', 'al': 'al2512', 'zn': 'zn2512', 'ni': 'ni2512', 'sn': 'sn2512',
-        'ru': 'ru2512', 'bu': 'bu2512', 'ma': 'ma2512', 'ta': 'ta2512', 'pp': 'pp2512',
-        'l': 'l2512', 'v': 'v2512', 'm': 'm2512', 'y': 'y2512', 'p': 'p2512',
-        'cs': 'cs2512', 'c': 'c2512', 'a': 'a2512', 'b': 'b2512',
-        'oi': 'oi2512', 'rm': 'rm2512', 'cf': 'cf2512', 'sr': 'sr2512',
-        'au': 'au2512', 'ag': 'ag2512', 'sc': 'sc2512',
-        't': 't2512', 'tf': 'tf2512',
-    }
-
-    # 获取合约代码
-    contract = _CONTRACT_2025.get(symbol.lower())
-    if not contract:
-        # 尝试直接使用品种代码
-        contract = symbol.lower()
-
     try:
-        df = futures_zh_daily_sina(symbol=contract)
-
-        if df is None or df.empty:
+        # 使用 curl 获取数据
+        symbol_upper = symbol.upper()
+        if not symbol_upper.endswith('0'):
+            # 主力合约需要加 0 后缀
+            symbol_upper = symbol_upper + '0'
+            
+        cmd = [
+            'curl', '-s',
+            f'https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_{symbol_upper}=/InnerFuturesNewService.getDailyKLine',
+            '--data', f'symbol={symbol_upper}&type=2025_04_03'
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        text = result.stdout.strip()
+        
+        if not text or 'var' not in text:
             return None
-
-        # 处理日期列
-        if 'date' in df.columns:
-            dates = df['date'].tolist()
-        else:
-            dates = [str(d) for d in df.index]
-
+        
+        # 解析 JSON: var _SYMBOL=([...]); 
+        match = re.search(r'var \w+=\(\[.*\]\);', text)
+        if not match:
+            return None
+        
+        # 提取 JSON 数组
+        json_str = match.group(0)
+        # 去掉 var SYMBOL=( 和最后的 ); 
+        json_str = json_str.split('=(')[1][:-2]
+        
+        data = json.loads(json_str)
+        
+        if not data:
+            return None
+        
         # 只取最后 N 天
-        if len(dates) > days:
-            df = df.tail(days)
-            if 'date' in df.columns:
-                dates = df['date'].tolist()
-            else:
-                dates = [str(d) for d in df.index]
-
+        if len(data) > days:
+            data = data[-days:]
+        
+        # 转换为标准格式
+        dates = [d['d'] for d in data]
+        opens = [float(d['o']) for d in data]
+        highs = [float(d['h']) for d in data]
+        lows = [float(d['l']) for d in data]
+        closes = [float(d['c']) for d in data]
+        volumes = [int(d['v']) for d in data]
+        
         return {
             'symbol': symbol,
             'dates': dates,
-            'opens': df['open'].tolist(),
-            'highs': df['high'].tolist(),
-            'lows': df['low'].tolist(),
-            'closes': df['close'].tolist(),
-            'volumes': df['volume'].tolist(),
+            'opens': opens,
+            'highs': highs,
+            'lows': lows,
+            'closes': closes,
+            'volumes': volumes,
         }
-
-    except Exception:
+        
+    except Exception as e:
+        print(f"获取 {symbol} 数据失败: {e}")
         return None
 
 

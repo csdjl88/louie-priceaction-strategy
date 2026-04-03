@@ -161,17 +161,23 @@ def load_csv_data(file_path: str) -> Optional[Dict]:
 
 
 def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
-                  risk_percent: float = 0.05, atr_stop: float = 2.0, atr_target: float = 6.0) -> Dict:
-    """运行回测"""
+                  risk_percent: float = 0.05, atr_stop: float = 2.0, atr_target: float = 6.0,
+                  trading_mode: str = "swing") -> Dict:
+    """运行回测
+    
+    Args:
+        trading_mode: 交易模式，"intraday"=日内平仓，"swing"=波段持仓
+    """
     print(f"\n{'='*60}")
-    print(f"  {symbol.upper()} 期货策略回测")
+    print(f"  {symbol.upper()} 期货策略回测 ({trading_mode}模式)")
     print(f"{'='*60}")
     
     # 使用传入的参数
     # 增大默认仓位到5%以确保能开仓（1%对螺纹钢等品种会导致仓位为0）
     effective_risk = max(risk_percent, 0.05)
     strategy = ChinaFuturesStrategy(symbol=symbol, risk_percent=effective_risk,
-                                     atr_stop=atr_stop, atr_target=atr_target)
+                                     atr_stop=atr_stop, atr_target=atr_target,
+                                     trading_mode=trading_mode)
     
     dates, opens, highs, lows, closes = data['dates'], data['opens'], data['highs'], data['lows'], data['closes']
     
@@ -223,10 +229,15 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                 pnl = (closes[i] - entry_price) * position * 10
                 should_stop, reason = False, ""
                 
+                # 日内模式：检测是否需要强制平仓
+                force_close = result.get('session_end_force_close', False)
+                
                 if closes[i] < entry_price - atr * atr_stop:
                     should_stop, reason = True, "ATR Stop Loss"
                 elif closes[i] > entry_price + atr * atr_target:
                     should_stop, reason = True, "Take Profit"
+                elif force_close:
+                    should_stop, reason = True, "Intraday Close"
                 elif signal == -1 or action == 'short':
                     should_stop, reason = True, "Reverse to Short"
             # 空头出场
@@ -234,10 +245,15 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                 pnl = (entry_price - closes[i]) * abs(position) * 10
                 should_stop, reason = False, ""
                 
+                # 日内模式：检测是否需要强制平仓
+                force_close = result.get('session_end_force_close', False)
+                
                 if closes[i] > entry_price + atr * atr_stop:
                     should_stop, reason = True, "ATR Stop Loss"
                 elif closes[i] < entry_price - atr * atr_target:
                     should_stop, reason = True, "Take Profit"
+                elif force_close:
+                    should_stop, reason = True, "Intraday Close"
                 elif signal == 1 or action == 'long':
                     should_stop, reason = True, "Reverse to Long"
             
@@ -328,6 +344,8 @@ def main():
     parser.add_argument('--file', '-f', default='data.csv', help='CSV文件路径')
     parser.add_argument('--days', '-n', type=int, default=300, help='数据天数')
     parser.add_argument('--capital', '-c', type=float, default=100000, help='初始资金')
+    parser.add_argument('--mode', '-m', choices=['intraday', 'swing'], default='swing',
+                        help='交易模式: intraday=日内平仓, swing=波段持仓')
     
     args = parser.parse_args()
     
@@ -345,7 +363,7 @@ def main():
     else:
         data = generate_simulated_data(args.symbol, args.days)
     
-    result = run_backtest(data, args.symbol, args.capital)
+    result = run_backtest(data, args.symbol, args.capital, trading_mode=args.mode)
     
     # 保存结果
     result_file = f"backtest_result_{args.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
