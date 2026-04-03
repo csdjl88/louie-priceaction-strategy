@@ -224,6 +224,66 @@ class SignalMonitor:
         except:
             pass
         return None
+
+    def _fetch_history_data(self, symbol: str, days: int = 60) -> Optional[Dict]:
+        """
+        获取历史K线数据（用于策略分析）
+        
+        Returns:
+            包含 opens, highs, lows, closes, volumes, dates 的字典
+        """
+        try:
+            import json
+            import re
+            
+            # 获取日K数据
+            result = subprocess.run(
+                ['curl', '-s',
+                 f'https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_{symbol.upper()}=/InnerFuturesNewService.getDailyKLine',
+                 '--data', f'symbol={symbol.upper()}&type=2025_04_03'],
+                capture_output=True, text=True, timeout=30
+            )
+            
+            text = result.stdout.strip()
+            if not text or 'var' not in text:
+                return None
+            
+            # 解析 JSON
+            match = re.search(r'var \w+=\(\[.*\]\);', text)
+            if not match:
+                return None
+            
+            json_str = match.group(0).split('=(')[1][:-2]
+            kline_data = json.loads(json_str)
+            
+            if not kline_data:
+                return None
+            
+            # 取最近 N 天
+            if len(kline_data) > days:
+                kline_data = kline_data[-days:]
+            
+            # 转换为策略需要的格式
+            dates = [d['d'] for d in kline_data]
+            opens = [float(d['o']) for d in kline_data]
+            highs = [float(d['h']) for d in kline_data]
+            lows = [float(d['l']) for d in kline_data]
+            closes = [float(d['c']) for d in kline_data]
+            volumes = [int(d['v']) for d in kline_data]
+            
+            return {
+                'symbol': symbol,
+                'dates': dates,
+                'opens': opens,
+                'highs': highs,
+                'lows': lows,
+                'closes': closes,
+                'volumes': volumes
+            }
+            
+        except Exception as e:
+            print(f"获取历史数据失败: {e}")
+            return None
     
     def _fetch_from_ctp(self, symbol: str) -> Optional[Dict]:
         """从CTP获取数据"""
@@ -231,21 +291,14 @@ class SignalMonitor:
         return None
     
     def _analyze_signal(self, symbol: str, data: Dict) -> Optional[TradingSignal]:
-        """分析信号"""
+        """使用策略分析信号"""
         try:
-            # 简单策略分析
-            # 实际应该调用 china_futures_strategy.py
-            
             close = data.get('close', 0)
-            open_price = data.get('open', 0)
-            high = data.get('high', 0)
-            low = data.get('low', 0)
-            
             if close == 0:
                 return None
             
-            # 计算简单指标
-            change_pct = (close - open_price) / open_price * 100 if open_price > 0 else 0
+            # 获取历史数据用于策略分析
+            history = self._fetch_history_data(symbol, days=60)
             
             signal = TradingSignal(
                 symbol=symbol,
@@ -257,27 +310,12 @@ class SignalMonitor:
                 reason=''
             )
             
-            # 简单信号逻辑
-            if change_pct > 2:  # 大涨
-                signal.signal_type = 'long'
-                signal.direction = 'bullish'
-                signal.confidence = 0.6
-                signal.reason = f'涨幅+{change_pct:.1f}%'
-            elif change_pct < -2:  # 大跌
-                signal.signal_type = 'short'
-                signal.direction = 'bearish'
-                signal.confidence = 0.6
-                signal.reason = f'跌幅{change_pct:.1f}%'
-            elif change_pct > 1:  # 小涨
-                signal.signal_type = 'long'
-                signal.direction = 'bullish'
-                signal.confidence = 0.4
-                signal.reason = f'涨幅+{change_pct:.1f}%'
-            elif change_pct < -1:  # 小跌
-                signal.signal_type = 'short'
-                signal.direction = 'bearish'
-                signal.confidence = 0.4
-                signal.reason = f'跌幅{change_pct:.1f}%'
+            # 如果获取到历史数据，使用完整策略分析
+            if history and len(history.get('closes', [])) > 30:
+                signal = self._analyze_with_strategy(symbol, history, data)
+            else:
+                # 降级到简单策略
+                signal = self._simple_analysis(symbol, data)
             
             # 缓存最新行情
             self.latest_quotes[symbol] = data
@@ -285,7 +323,116 @@ class SignalMonitor:
             return signal
             
         except Exception as e:
+            print(f"分析信号异常: {e}")
             return None
+    
+    def _analyze_with_strategy(self, symbol: str, history: Dict, current_data: Dict) -> TradingSignal:
+        """
+        使用 china_futures_strategy 进行完整策略分析
+        """
+        try:
+            # 延迟导入避免循环依赖
+            from china_futures_strategy import ChinaFuturesStrategy
+            
+            # 准备数据 - 添加最新行情
+            # 如果实时数据获取失败，使用历史最后一条
+            if current_data is None:
+                current_data = {
+                    'open': history['opens'][-1] if history['opens'] else 0,
+                    'high': history['highs'][-1] if history['highs'] else 0,
+                    'low': history['lows'][-1] if history['lows'] else 0,
+                    'close': history['closes'][-1] if history['closes'] else 0,
+                    'volume': history['volumes'][-1] if history['volumes'] else 0
+                }
+            
+            opens = history['opens'] + [current_data.get('open', 0)]
+            highs = history['highs'] + [current_data.get('high', 0)]
+            lows = history['lows'] + [current_data.get('low', 0)]
+            closes = history['closes'] + [current_data.get('close', 0)]
+            volumes = history['volumes'] + [current_data.get('volume', 0)]
+            
+            # 创建策略实例
+            symbol_base = symbol.lower().replace('0', '')
+            strategy = ChinaFuturesStrategy(
+                symbol=symbol_base,
+                require_trend=True  # 要求趋势确认
+            )
+            
+            # 获取最新K线的索引
+            idx = len(closes) - 1
+            
+            # 运行策略分析
+            result = strategy.analyze(opens, highs, lows, closes, idx)
+            
+            # 解析结果
+            action = result.get('action', 'none')
+            confidence = result.get('confidence', 0)
+            trend = result.get('trend', 'unknown')
+            reason = result.get('reason', result.get('signal_direction', 'neutral'))
+            atr = result.get('atr', 0)
+            
+            signal = TradingSignal(
+                symbol=symbol,
+                timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                signal_type=action,
+                direction=result.get('signal_direction', 'neutral'),
+                price=closes[-1],
+                confidence=confidence,
+                reason=reason or trend,
+                atr=atr,
+                trend=trend
+            )
+            
+            return signal
+            
+        except Exception as e:
+            print(f"策略分析失败: {e}")
+            return self._simple_analysis(symbol, current_data)
+    
+    def _simple_analysis(self, symbol: str, data: Dict) -> TradingSignal:
+        """简单策略分析（降级方案）"""
+        if data is None:
+            return None
+        close = data.get('close', 0)
+        open_price = data.get('open', 0)
+        
+        if close == 0:
+            return None
+        
+        change_pct = (close - open_price) / open_price * 100 if open_price > 0 else 0
+        
+        signal = TradingSignal(
+            symbol=symbol,
+            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            signal_type='none',
+            direction='neutral',
+            price=close,
+            confidence=0,
+            reason=''
+        )
+        
+        if change_pct > 2:
+            signal.signal_type = 'long'
+            signal.direction = 'bullish'
+            signal.confidence = 0.6
+            signal.reason = f'涨幅+{change_pct:.1f}%'
+        elif change_pct < -2:
+            signal.signal_type = 'short'
+            signal.direction = 'bearish'
+            signal.confidence = 0.6
+            signal.reason = f'跌幅{change_pct:.1f}%'
+        elif change_pct > 1:
+            signal.signal_type = 'long'
+            signal.direction = 'bullish'
+            signal.confidence = 0.4
+            signal.reason = f'涨幅+{change_pct:.1f}%'
+        elif change_pct < -1:
+            signal.signal_type = 'short'
+            signal.direction = 'bearish'
+            signal.confidence = 0.4
+            signal.reason = f'跌幅{change_pct:.1f}%'
+        
+        return signal
     
     # ==================== 便捷方法 ====================
     
