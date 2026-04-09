@@ -37,10 +37,10 @@ class PriceActionStrategy:
     """
     
     def __init__(self, 
-                 atr_period=14,
-                 sma_period=50,
+                 atr_period=10,      # 优化值：10（默认14）
+                 sma_period=30,      # 优化值：30（默认50）
                  risk_percent=0.02,
-                 atr_stop_multiplier=2.0,
+                 atr_stop_multiplier=1.5,  # 优化值：1.5（默认2.0）
                  min_body_ratio=2.0,
                  min_shadow_ratio=2.0,
                  lookback_period=20,

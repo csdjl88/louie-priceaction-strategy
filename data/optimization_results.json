@@ -1,0 +1,103 @@
+{
+  "best_by_symbol": {
+    "AL0": {
+      "best_params": [
+        20,
+        2.0,
+        4.0,
+        30
+      ],
+      "best_score": 0.8159639161973976,
+      "best_result": {
+        "atr_period": 20,
+        "atr_stop": 2.0,
+        "atr_target": 4.0,
+        "sma_period": 30,
+        "score": 0.8159639161973976,
+        "return": 9.876730286752483,
+        "win_rate": 0.5714285714285714,
+        "max_drawdown": 4.836203275934479,
+        "trades": 7
+      }
+    },
+    "BR0": {
+      "best_params": [
+        10,
+        2.5,
+        8.0,
+        30
+      ],
+      "best_score": 0.73,
+      "best_result": {
+        "atr_period": 10,
+        "atr_stop": 2.5,
+        "atr_target": 8.0,
+        "sma_period": 30,
+        "score": 0.73,
+        "return": 42.713087000501524,
+        "win_rate": 0.25,
+        "max_drawdown": 18.54204045206371,
+        "trades": 4
+      }
+    },
+    "SR0": {
+      "best_params": [
+        10,
+        1.5,
+        4.0,
+        30
+      ],
+      "best_score": 0.5733870457346626,
+      "best_result": {
+        "atr_period": 10,
+        "atr_stop": 1.5,
+        "atr_target": 4.0,
+        "sma_period": 30,
+        "score": 0.5733870457346626,
+        "return": 0.31855683306174193,
+        "win_rate": 0.25,
+        "max_drawdown": 6.795153869282107,
+        "trades": 8
+      }
+    },
+    "TA0": {
+      "best_params": [
+        10,
+        2.5,
+        6.0,
+        30
+      ],
+      "best_score": 0.7675,
+      "best_result": {
+        "atr_period": 10,
+        "atr_stop": 2.5,
+        "atr_target": 6.0,
+        "sma_period": 30,
+        "score": 0.7675,
+        "return": 27.702558227538038,
+        "win_rate": 0.4,
+        "max_drawdown": 10.877710426791339,
+        "trades": 5
+      }
+    }
+  },
+  "global_best": {
+    "atr_period": 20,
+    "atr_stop": 2.0,
+    "atr_target": 4.0,
+    "sma_period": 30,
+    "score": 0.8159639161973976,
+    "return": 9.876730286752483,
+    "win_rate": 0.5714285714285714,
+    "max_drawdown": 4.836203275934479,
+    "trades": 7,
+    "symbol": "AL0"
+  },
+  "robust_params": [
+    10,
+    1.5,
+    8.0,
+    30
+  ],
+  "robust_avg_score": 0.6574249294866535
+}

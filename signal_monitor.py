@@ -164,10 +164,8 @@ class SignalMonitor:
         try:
             # 获取实时数据
             data = self._fetch_latest_data(symbol)
-            if not data:
-                return
             
-            # 运行策略分析
+            # 运行策略分析（即使没有实时数据，也会使用历史数据分析）
             signal = self._analyze_signal(symbol, data)
             
             if signal and signal.signal_type != 'none':
@@ -293,12 +291,13 @@ class SignalMonitor:
     def _analyze_signal(self, symbol: str, data: Dict) -> Optional[TradingSignal]:
         """使用策略分析信号"""
         try:
-            close = data.get('close', 0)
-            if close == 0:
+            # 获取历史数据用于策略分析（即使没有实时数据也要分析）
+            history = self._fetch_history_data(symbol, days=60)
+            if not history or len(history.get('closes', [])) < 30:
                 return None
             
-            # 获取历史数据用于策略分析
-            history = self._fetch_history_data(symbol, days=60)
+            closes = history['closes']
+            close = data.get('close', 0) if data else closes[-1]
             
             signal = TradingSignal(
                 symbol=symbol,
@@ -317,8 +316,18 @@ class SignalMonitor:
                 # 降级到简单策略
                 signal = self._simple_analysis(symbol, data)
             
-            # 缓存最新行情
-            self.latest_quotes[symbol] = data
+            # 缓存最新行情（如果实时数据为空，使用历史最新数据）
+            if data is None and history:
+                latest = {
+                    'open': history['opens'][-1] if history['opens'] else 0,
+                    'high': history['highs'][-1] if history['highs'] else 0,
+                    'low': history['lows'][-1] if history['lows'] else 0,
+                    'close': history['closes'][-1] if history['closes'] else 0,
+                    'volume': history['volumes'][-1] if history['volumes'] else 0,
+                }
+                self.latest_quotes[symbol] = latest
+            else:
+                self.latest_quotes[symbol] = data
             
             return signal
             

@@ -22,8 +22,8 @@ Price Action 交易框架
     # 创建策略
     strategy = PriceActionStrategy(
         risk_percent=0.02,
-        sma_period=50,
-        atr_period=14
+        sma_period=30,       # 优化值：30（默认50）
+        atr_period=10        # 优化值：10（默认14）
     )
     
     # 创建回测引擎

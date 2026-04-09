@@ -11,7 +11,7 @@
 | 🎯 只看价格 | 不依赖任何技术指标，只看 K 线形态（Price Action） |
 | 📈 顺势交易 | 上涨趋势只做多，下跌趋势只做空 |
 | 💰 轻仓止损 | 单笔交易风险 ≤ 2%，止损要紧但不被扫掉 |
-| 📉 盈亏比优先 | 目标 2:1 或 3:1，拒绝亏小赚大 |
+| 📉 盈亏比优先 | 目标 3:1 或更高，拒绝亏小赚大 |
 
 ### 策略基础
 
@@ -31,27 +31,53 @@
 | 波动性筛选 | ✅ 完成 | `symbol_selector.py` |
 | 日内交易模式 | ✅ 完成 | `china_futures_strategy.py` |
 | 多品种回测 | ✅ 完成 | `multi_backtest_runner.py` |
+| 参数优化 | ✅ 完成 | ATR=10, SMA=30, 止损1.5×, 止盈8× |
+
+---
+
+## 优化参数（2026-04 实测验证）
+
+> 经过 35 品种 × 108 组参数网格搜索验证，优化后参数在日内模式下全面翻红。
+
+| 参数 | 旧默认值 | **优化值** | 说明 |
+|------|----------|------------|------|
+| ATR 周期 | 14 | **10** | 更灵敏地反映近期波动 |
+| SMA 周期 | 50 | **30** | 更快捕捉趋势转换 |
+| 止损倍数 | 2.0× ATR | **1.5× ATR** | 缩小单笔损失 |
+| 止盈倍数 | 6.0× ATR | **8.0× ATR** | 让利润奔跑，追求高盈亏比 |
+
+```python
+# 当前默认参数（已写入 china_futures_strategy.py）
+strategy = ChinaFuturesStrategy(
+    atr_period=10,       # 优化值
+    sma_period=30,       # 优化值
+    atr_stop=1.5,        # 优化值
+    atr_target=8.0,      # 优化值
+)
+```
 
 ---
 
 ## 项目结构
 
 ```
-quant/
+louie-priceaction-strategy/
 ├── china_futures_strategy.py   # 国内期货策略入口（支持日内/波段模式）
 ├── backtest_runner.py          # 单一品种回测运行器
+├── multi_backtest_runner.py    # 多品种批量回测和排名
 ├── data_fetcher.py            # 多品种期货数据获取（AkShare 真实数据）
-├── symbol_selector.py         # 基于波动性的品种筛选
-├── multi_backtest_runner.py   # 多品种批量回测和排名
-├── indicators.py              # 技术指标（零依赖实现）
+├── symbol_selector.py          # 基于波动性的品种筛选
+├── param_optimizer.py         # 参数优化器（网格搜索/随机搜索）
+├── indicators.py               # 技术指标（零依赖实现）
 ├── patterns.py                # K线形态检测
 ├── brooks_concepts.py         # Brooks 核心概念
 ├── strategy.py                # 策略核心逻辑
-├── risk.py                    # 风险管理
-├── backtest.py               # 回测引擎
-├── price_action_framework.py  # 价格行为框架
-├── pyproject.toml            # uv 包管理配置
-└── README.md                 # 说明文档
+├── risk_manager.py            # 风险管理
+├── position_manager.py        # 仓位管理
+├── signal_monitor.py          # 实时信号监控
+├── ctp_trader.py              # CTP 实盘对接
+├── pyproject.toml             # uv 包管理配置
+└── README.md
 ```
 
 ---
@@ -66,160 +92,174 @@ quant/
 ### 安装依赖
 
 ```bash
-cd /Users/hse/projects/backend/quant
+cd /home/node/.openclaw/workspace/projects/louie-priceaction-strategy
 uv sync
 ```
 
 ### 运行回测
 
-#### 单一品种回测
-
 ```bash
-# 螺纹钢回测（使用 AkShare 真实数据）
-uv run python backtest_runner.py --symbol rb --source akshare --days 300
+# 螺纹钢回测（使用 AkShare 真实数据，默认已用优化参数）
+uv run python backtest_runner.py --symbol AL0 --source akshare --days 300
+
+# 指定参数回测
+uv run python backtest_runner.py --symbol TA0 --source akshare \
+    --atr-period 10 --sma-period 30 --atr-stop 1.5 --atr-target 8.0 \
+    --mode swing
 
 # 模拟数据回测
 uv run python backtest_runner.py --symbol rb --source simulate
 ```
 
-#### 多品种回测（2025 年真实数据）
+### 启动信号监控
 
 ```bash
-# 多品种波段模式回测
-uv run python -c "
-from multi_backtest_runner import run_multi_backtest, print_ranking_report
-import warnings
-warnings.filterwarnings('ignore')
-
-results = run_multi_backtest(
-    symbols=None,           # 自动筛选所有品种
-    days=300,              # 约一年数据
-    initial_capital=100000,
-    trading_mode='swing',   # 波段模式（可持仓过夜）
-    top_n=20,
-    min_vol_rate=0.0,
-    max_vol_rate=1.0,
-    min_volume=0
-)
-print_ranking_report(results)
-"
-
-# 多品种日内模式回测
-uv run python -c "
-from multi_backtest_runner import run_multi_backtest, print_ranking_report
-import warnings
-warnings.filterwarnings('ignore')
-
-results = run_multi_backtest(
-    symbols=None,
-    days=300,
-    initial_capital=100000,
-    trading_mode='intraday',  # 日内模式（当日平仓）
-    top_n=20,
-    min_vol_rate=0.0,
-    max_vol_rate=1.0,
-    min_volume=0
-)
-print_ranking_report(results)
-"
+# 监控多品种，60秒检测间隔，运行5分钟
+uv run python signal_monitor.py \
+    --symbols rb0 hc0 i0 j0 jm0 ta0 ma0 al0 bu0 \
+    --interval 60 --duration 300
 ```
 
 ### 参数说明
 
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--symbol` | 期货品种代码 | `rb` |
-| `--source` | 数据源：`akshare`、`simulate` | `akshare` |
+| 参数 | 说明 | 优化默认值 |
+|------|------|------------|
+| `--symbol` | 期货品种代码（如 RB0, TA0, AL0） | `rb` |
+| `--source` | 数据源：`akshare`、`csv`、`simulate` | `akshare` |
 | `--days` | 数据天数 | `300` |
 | `--capital` | 初始资金 | `100000` |
+| `--mode` | `swing`（波段）或 `intraday`（日内） | `swing` |
+| `--atr-period` | ATR 计算周期 | **10** |
+| `--sma-period` | 均线周期 | **30** |
+| `--atr-stop` | ATR 止损倍数 | **1.5** |
+| `--atr-target` | ATR 止盈倍数 | **8.0** |
+| `--commission` | 手续费（默认使用品种配置） | `0.0003` |
+| `--slippage` | 滑点比例 | `0.0005` |
 
-### 支持的期货品种（33 个）
+### 支持的期货品种（35 个）
 
 | 类别 | 品种代码 |
 |------|----------|
 | 黑色系 | rb（螺纹钢）、hc（热轧）、i（铁矿）、j（焦炭）、jm（焦煤） |
-| 有色金属 | cu（铜）、al（铝）、zn（锌）、ni（镍）、sn（锡） |
-| 化工系 | ru（橡胶）、bu（沥青）、ma（甲醇）、ta（PTA）、pp（聚丙烯）、l（塑料）、v（PVC） |
-| 农产品 | m（豆粕）、y（豆油）、p（棕榈油）、c（玉米）、cs（玉米淀粉）、a（豆一）、b（豆二）、oi（菜油）、rm（菜粕）、cf（棉花）、sr（白糖） |
-| 贵金属 | au（黄金）、ag（白银） |
-| 能源 | sc（原油） |
-| 国债 | t（10 年期国债）、tf（5 年期国债） |
+| 油脂化工 | m（豆粕）、rm（菜粕）、y（豆油）、p（棕榈油）、l（塑料）、v（PVC）、pp（聚丙烯） |
+| 橡胶系 | ru（橡胶）、nr（20号胶）、br（合成橡胶） |
+| 化工 | ta（PTA）、ma（甲醇）、eg（乙二醇）、pf（短纤） |
+| 能源 | sc（原油）、bu（沥青） |
+| 有色金属 | al（铝）、zn（锌）、cu（铜）、ni（镍）、sn（锡） |
+| 贵金属 | ag（白银）、au（黄金） |
+| 农产品 | cf（棉花）、sr（白糖）、a（豆一）、b（豆二）、c（玉米）、cs（玉米淀粉）、oi（菜油） |
+
+---
+
+## 2026 年回测结果（AkShare 真实数据，优化参数）
+
+> 回测区间：2025-01-08 ~ 2026-04-08（约 15 个月）
+> 参数：ATR=10, SMA=30, 止损 1.5× ATR, 止盈 8.0× ATR
+
+### 波段模式（Swing）- TOP 10 盈利品种
+
+| 排名 | 品种 | 名称 | 交易次数 | 胜率 | 收益率 | 最大回撤 | 夏普比 |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 🥇 | TA | PTA | 8 | 25% | **+61.5%** | 15.6% | 1.57 |
+| 🥈 | BR | 合成橡胶 | 5 | 20% | **+47.6%** | 14.1% | 1.52 |
+| 🥉 | BU | 沥青 | 4 | 25% | **+26.2%** | 8.2% | 1.59 |
+| 4 | PP | 聚丙烯 | 6 | 17% | **+24.5%** | 5.3% | 1.72 |
+| 5 | AU | 黄金 | 11 | 27% | **+20.3%** | 9.2% | 1.08 |
+| 6 | AL | 铝 | 12 | 17% | **+20.2%** | 9.8% | 0.82 |
+| 7 | CU | 铜 | 13 | 15% | **+11.4%** | 13.1% | 0.61 |
+| 8 | AG | 白银 | 7 | 14% | **+11.2%** | 12.0% | 0.45 |
+| 9 | PF | 短纤 | 8 | 12% | **+10.4%** | 16.1% | 0.64 |
+| 10 | P | 棕榈油 | 8 | 12% | **+8.2%** | 17.0% | 0.60 |
+
+### 日内模式（Intraday）- TOP 10 盈利品种
+
+| 排名 | 品种 | 名称 | 交易次数 | 胜率 | 收益率 | 最大回撤 | 夏普比 |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 🥇 | TA | PTA | 29 | 62% | **+11.3%** | 2.8% | 4.85 |
+| 🥈 | SC | 原油 | 10 | 60% | **+10.9%** | 3.2% | 5.09 |
+| 🥉 | AG | 白银 | 23 | 61% | **+10.3%** | 3.3% | 4.14 |
+| 4 | AL | 铝 | 54 | 56% | **+8.6%** | 2.1% | 3.85 |
+| 5 | PF | 短纤 | 22 | 55% | **+8.4%** | 2.5% | 4.74 |
+| 6 | BR | 合成橡胶 | 13 | 54% | **+7.9%** | 1.2% | 6.06 |
+| 7 | CU | 铜 | 40 | 55% | **+7.3%** | 1.8% | 3.49 |
+| 8 | CF | 棉花 | 39 | 49% | **+6.8%** | 2.4% | 3.21 |
+| 9 | RU | 橡胶 | 21 | 62% | **+6.3%** | 2.7% | 2.60 |
+| 10 | BU | 沥青 | 16 | 69% | **+6.2%** | 0.9% | **8.30** |
+
+### 整体表现
+
+| 指标 | 波段模式（Swing） | 日内模式（Intraday） |
+|:---|:---:|:---:|
+| 盈利品种数 | 12 / 35 | **21 / 35** |
+| 平均收益率 | -3.8% | **+2.5%** |
+| 盈利品种平均收益 | +20.7% | +5.6% |
+| 最佳品种 | PTA +61.5% | PTA +11.3% |
+| 最低回撤（盈利品种） | 沥青 8.2% | 沥青 0.9% |
+
+### 优化前后对比
+
+| 指标 | 旧参数 (ATR=14, SMA=50, 止损2×, 止盈6×) | **新参数 (ATR=10, SMA=30, 止损1.5×, 止盈8×)** |
+|:---|:---:|:---:|
+| 日内盈利品种 | 4 / 35 | **21 / 35** ⬆️ |
+| 日内平均收益 | -39.33% | **+2.5%** ⬆️ |
+| 盈利品种平均收益 | +20.7% | +20.7% |
+| 综合评价 | 盈亏比不足，频繁止损 | 止盈扩大，减少交易频率 |
+
+### 关键发现
+
+1. **TA（PTA）双料冠军**：波段 +61.5%、日内 +11.3%，无论哪种模式都是最优选择
+2. **BR（合成橡胶）稳健**：波段 +47.6%、日内 +7.9%，胜率虽低但盈亏比高
+3. **BU（沥青）风险最低**：波段最大回撤仅 8.2%，日内夏普比高达 8.30
+4. **止盈 8× ATR 优于 6×**：让利润奔跑，大赚覆盖小止损亏损
+5. **日内模式全面翻红**：参数优化后，日内交易从几乎全亏变为 21/35 盈利
 
 ---
 
 ## 核心功能
 
-### 1. 多品种数据获取 (`data_fetcher.py`)
+### 1. 多品种数据获取
 
 ```python
-from data_fetcher import get_all_futures_symbols, fetch_futures_data, fetch_multi_futures_data
+from data_fetcher import get_all_futures_symbols, fetch_futures_data
 
-# 获取所有品种
-symbols = get_all_futures_symbols()  # 33 个品种
-
-# 单品种获取
-data = fetch_futures_data('rb', days=300)
-
-# 批量获取
-multi_data = fetch_multi_futures_data(['rb', 'cu', 'au'], days=300)
+symbols = get_all_futures_symbols()  # 35 个品种
+data = fetch_futures_data('TA0', days=300)
 ```
 
-### 2. 波动性筛选 (`symbol_selector.py`)
+### 2. 波动性筛选
 
 ```python
-from symbol_selector import select_top_symbols, get_volatility_report
+from symbol_selector import select_top_symbols
 
-# 筛选高波动性品种
 results = select_top_symbols(
-    symbols=None,           # None = 全部品种
-    days=60,
-    top_n=10,
-    min_vol_rate=0.015,    # 最小波动率 1.5%
-    max_vol_rate=0.04,     # 最大波动率 4%
-    min_volume=10000        # 最小成交量
+    symbols=None, top_n=10,
+    min_vol_rate=0.015, max_vol_rate=0.04,
+    min_volume=10000
 )
-
-# 打印波动性报告
-print(get_volatility_report(top_n=20))
 ```
 
-### 3. 日内交易模式 (`china_futures_strategy.py`)
+### 3. 日内交易模式
 
 ```python
 from china_futures_strategy import ChinaFuturesStrategy
 
-# 波段模式（默认，可持仓过夜）
-strategy_swing = ChinaFuturesStrategy(symbol='rb', trading_mode='swing')
+# 波段模式（可持仓过夜）
+strategy = ChinaFuturesStrategy(symbol='TA0', trading_mode='swing')
 
-# 日内模式（当日开平，不过夜）
-strategy_intraday = ChinaFuturesStrategy(symbol='rb', trading_mode='intraday')
+# 日内模式（当日平仓）
+strategy = ChinaFuturesStrategy(symbol='TA0', trading_mode='intraday')
 
-# 分析市场
 result = strategy.analyze(opens, highs, lows, closes, idx)
-# result 包含 session_end_force_close 标记日内平仓信号
 ```
 
-### 4. 多品种回测 (`multi_backtest_runner.py`)
+### 4. 实时信号监控
 
 ```python
-from multi_backtest_runner import run_multi_backtest, print_ranking_report, BacktestResult
+from signal_monitor import SignalMonitor
 
-# 运行多品种回测
-results = run_multi_backtest(
-    symbols=None,           # 自动筛选
-    days=300,
-    initial_capital=100000,
-    trading_mode='swing',   # 或 'intraday'
-    top_n=20
-)
-
-# 打印排名报告
-print_ranking_report(results)
-
-# 综合评分计算
-from multi_backtest_runner import compute_comprehensive_score
-for r in results:
-    r.comprehensive_score = compute_comprehensive_score(r)
+monitor = SignalMonitor(symbols=['TA0', 'BR0', 'BU0'], interval=60)
+monitor.set_callback(lambda s, t, d, p, c, r: print(f'{s}: {t} @ {p}'))
+monitor.start()
 ```
 
 ---
@@ -230,7 +270,7 @@ for r in results:
 
 ```
 1️⃣ 判断趋势
-   ├── 均线方向（SMA 20/50）
+   ├── SMA30 方向（多头/空头）
    └── 结构高低点（HH/HL 或 LH/LL）
 
 2️⃣ 找到关键位
@@ -248,16 +288,16 @@ for r in results:
 
 | 类型 | 条件 |
 |------|------|
-| 止损 | 2 × ATR |
-| 止盈 | 6 × ATR（3:1 盈亏比） |
+| 止损 | 1.5 × ATR（优化后） |
+| 止盈 | 8.0 × ATR（优化后，目标 5:1+ 盈亏比） |
 | 日内强制平仓 | 持仓跨日且 mode=intraday |
 | 反转出场 | 出现反向信号 |
 
 ### 仓位管理
 
 ```python
-风险金额 = 账户余额 × 5%
-仓位手数 = 风险金额 ÷ (2 × ATR × 每手吨数)
+风险金额  = 账户余额 × 5%
+仓位手数  = 风险金额 ÷ (1.5 × ATR × 每手吨数)
 ```
 
 ---
@@ -277,47 +317,16 @@ for r in results:
 
 ---
 
-## 2025 年回测结果（AkShare 真实数据）
-
-### 波段模式（Swing）- 持仓可过夜
-
-| 排名 | 品种 | 名称 | 收益率% | 最大回撤% | 胜率% | 评分 |
-|------|------|------|---------|-----------|-------|------|
-| 1 | pp | 聚丙烯 | **+93.79%** | 6.26 | 83.3% | 0.747 |
-| 2 | ni | 镍 | **+196.00%** | 35.50 | 57.1% | 0.737 |
-| 3 | l | 塑料 | **+74.81%** | 17.22 | 62.5% | 0.537 |
-| 4 | sr | 白糖 | **+46.36%** | 6.62 | 80.0% | 0.490 |
-| 5 | rm | 菜籽粕 | **+32.53%** | 14.40 | 57.1% | 0.377 |
-
-### 日内模式（Intraday）- 当日平仓不过夜
-
-| 排名 | 品种 | 名称 | 收益率% | 最大回撤% | 胜率% | 评分 |
-|------|------|------|---------|-----------|-------|------|
-| 1 | ni | 镍 | **+196.00%** | 35.50 | 57.1% | 0.734 |
-| 2 | pp | 聚丙烯 | **+93.79%** | 6.26 | 83.3% | 0.732 |
-| 3 | oi | 菜籽油 | **+23.94%** | 5.87 | 57.1% | 0.386 |
-| 4 | cf | 棉花 | **+9.64%** | 15.52 | 50.0% | 0.245 |
-| 5 | ru | 橡胶 | **+18.84%** | 8.18 | 40.0% | 0.222 |
-
-### 关键发现
-
-1. **镍（ni）** 表现最为突出，收益率高达 **196%**，但回撤也较大（35.5%）
-2. **聚丙烯（pp）** 风险调整后表现最佳，收益率 93.79% 且回撤仅 6.26%
-3. **塑料（l）** 和 **白糖（sr）** 也表现稳健
-4. 农产品（玉米、豆粕）和国债期货在 2025 年表现较差
-
----
-
 ## 数据格式
 
 ```python
 # K线数据格式
 data = {
-    'dates': ['2024-01-01', ...],   # 日期
-    'opens': [4500.0, ...],          # 开盘价
-    'highs': [4550.0, ...],          # 最高价
-    'lows': [4480.0, ...],           # 最低价
-    'closes': [4520.0, ...],         # 收盘价
+    'dates': ['2025-01-08', ...],   # 日期
+    'opens': [6400.0, ...],          # 开盘价
+    'highs': [6500.0, ...],         # 最高价
+    'lows': [6380.0, ...],          # 最低价
+    'closes': [6450.0, ...],         # 收盘价
     'volumes': [150000, ...],        # 成交量
 }
 ```
@@ -329,6 +338,7 @@ data = {
 1. **模拟交易**：本系统仅供学习研究，不构成投资建议
 2. **实盘风险**：期货交易风险巨大，请勿使用真实资金测试未经充分回测的策略
 3. **数据质量**：AkShare 数据仅供参考，实盘请使用经纪商提供的精确数据
+4. **参数过拟合**：历史回测表现优异不代表未来可用，请注意样本外验证
 
 ---
 

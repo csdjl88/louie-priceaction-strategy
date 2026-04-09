@@ -565,10 +565,10 @@ class ChinaFuturesStrategy:
     def __init__(self,
                  symbol: str = 'rb',
                  risk_percent: float = 0.05,  # 5%仓位（确保能开仓）
-                 atr_period: int = 14,
-                 sma_period: int = 50,
-                 atr_stop: float = 2.0,
-                 atr_target: float = 6.0,
+                 atr_period: int = 10,      # 优化值：ATR=10（默认14），更灵敏
+                 sma_period: int = 30,      # 优化值：SMA=30（默认50），信号更快
+                 atr_stop: float = 1.5,     # 优化值：止损1.5×ATR（默认2.0），损失更小
+                 atr_target: float = 8.0,   # 优化值：止盈8×ATR（默认6.0），让利润奔跑
                  lookback_period: int = 20,
                  body_ratio: float = 2.0,
                  shadow_ratio: float = 2.0,

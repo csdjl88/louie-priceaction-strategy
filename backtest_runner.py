@@ -161,8 +161,8 @@ def load_csv_data(file_path: str) -> Optional[Dict]:
 
 
 def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
-                  risk_percent: float = 0.05, atr_stop: float = 2.0, atr_target: float = 6.0,
-                  trading_mode: str = "swing", atr_period: int = 14, sma_period: int = 50,
+                  risk_percent: float = 0.05, atr_stop: float = 1.5, atr_target: float = 8.0,
+                  trading_mode: str = "swing", atr_period: int = 10, sma_period: int = 30,
                   commission: float = None, slippage: float = 0.0005) -> Dict:
     """运行回测
     
@@ -450,10 +450,10 @@ def main():
     parser.add_argument('--capital', '-c', type=float, default=100000, help='初始资金')
     parser.add_argument('--mode', '-m', choices=['intraday', 'swing'], default='swing',
                         help='交易模式: intraday=日内平仓, swing=波段持仓')
-    parser.add_argument('--atr-period', type=int, default=14, help='ATR周期')
-    parser.add_argument('--atr-stop', type=float, default=2.0, help='ATR止损倍数')
-    parser.add_argument('--atr-target', type=float, default=6.0, help='ATR止盈倍数')
-    parser.add_argument('--sma-period', type=int, default=50, help='均线周期')
+    parser.add_argument('--atr-period', type=int, default=10, help='ATR周期（优化值：10）')
+    parser.add_argument('--atr-stop', type=float, default=1.5, help='ATR止损倍数（优化值：1.5）')
+    parser.add_argument('--atr-target', type=float, default=8.0, help='ATR止盈倍数（优化值：8.0）')
+    parser.add_argument('--sma-period', type=int, default=30, help='均线周期（优化值：30）')
     parser.add_argument('--commission', type=float, default=None, help='手续费 (默认使用品种配置)')
     parser.add_argument('--slippage', type=float, default=0.0005, help='滑点比例 (默认万分之5)')
     
