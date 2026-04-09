@@ -1,3 +1,19 @@
+# ──────────────────────────────────────────────────────────────────────────
+# 高风险品种（因仓位计算异常/杠杆过高，已排除在默认监控之外）
+# 这些品种价格基数大、ATR 小比例大，单笔亏损易超出 2% 风险预算
+# 如需监控，请手动指定：--symbols NI0 CU0 SN0 AU0
+EXCLUDED_SYMBOLS = {'NI0', 'NI', 'CU0', 'CU', 'SN0', 'SN', 'AU0', 'AU'}
+
+# 默认监控品种（已排除高风险品种）
+DEFAULT_SYMBOLS = [
+    'TA0', 'BR0', 'AL0', 'BU0', 'PF0',
+    'CF0', 'RU0', 'AG0', 'SC0', 'PP0',
+    'M0', 'RM0', 'Y0', 'P0', 'L0', 'V0',
+    'RB0', 'HC0', 'I0', 'J0', 'JM0',
+    'MA0', 'EG0', 'NR0', 'SR0', 'A0', 'B0', 'C0', 'CS0', 'OI0',
+]
+# ──────────────────────────────────────────────────────────────────────────
+
 """
 signal_monitor.py - 交易信号实时监听
 ===================================
@@ -78,7 +94,9 @@ class SignalMonitor:
             interval: 检测间隔(秒)
             use_ctp: 是否使用CTP实盘
         """
-        self.symbols = symbols or ['RB0', 'TA0', 'BR0', 'AL0', 'BU0']
+        _filtered = [s for s in (symbols or DEFAULT_SYMBOLS)
+                    if s.upper().replace('0','') not in EXCLUDED_SYMBOLS]
+        self.symbols = _filtered
         self.strategy = strategy
         self.interval = interval
         self.use_ctp = use_ctp
@@ -472,8 +490,8 @@ if __name__ == '__main__':
     import argparse
     
     parser = argparse.ArgumentParser(description='交易信号监听')
-    parser.add_argument('--symbols', '-s', nargs='+', default=['RB0', 'TA0', 'BR0'],
-                       help='监控品种')
+    parser.add_argument('--symbols', '-s', nargs='+', default=DEFAULT_SYMBOLS[:8],
+                       help='监控品种（已排除NI/CU/SN/AU高风险品种）')
     parser.add_argument('--interval', '-i', type=int, default=30, help='检测间隔(秒)')
     parser.add_argument('--duration', '-d', type=int, default=120, help='运行时间(秒)')
     
