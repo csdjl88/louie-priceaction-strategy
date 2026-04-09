@@ -133,6 +133,8 @@ uv run python signal_monitor.py \
 | `--sma-period` | 均线周期 | **30** |
 | `--atr-stop` | ATR 止损倍数 | **1.5** |
 | `--atr-target` | ATR 止盈倍数 | **8.0** |
+| `--no-vol-filter` | 关闭成交量过滤（默认开启） | `False` |
+| `--vol-threshold` | 成交量过滤阈值（>threshold×60日均量） | **0.5** |
 | `--commission` | 手续费（默认使用品种配置） | `0.0003` |
 | `--slippage` | 滑点比例 | `0.0005` |
 
@@ -412,14 +414,16 @@ monitor.start()
 | 成交量过滤 | 0.5× 均量过滤可提升胜率但减少交易 | 可选（保守操作） |
 | 趋势过滤 | 减少一半交易，收益降 16% | 保守可选 |
 
-**最优参数组合确认（不做任何修改）**：
+**最优参数组合（已加入成交量过滤）**：
 ```python
-# 日内模式（最优，无需修改）
+# 日内模式（最优参数，已验证）
 trading_mode = 'intraday'
-atr_period   = 10   # 不改
-sma_period  = 30   # 不改
-atr_stop    = 1.5  # 不改（其实无效）
-atr_target  = 8.0  # 不改（其实无效）
+atr_period   = 10
+sma_period  = 30
+atr_stop    = 1.5   # 其实无效（靠收盘平仓），但保留
+atr_target  = 8.0   # 其实无效，但保留
+use_vol_filter = True       # ✅ 新增：成交量>0.5×60日均量才入场
+vol_threshold = 0.5         # 过滤低量日，减少假信号
 ```
 
 **波段模式可选调整**：

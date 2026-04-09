@@ -163,7 +163,9 @@ def load_csv_data(file_path: str) -> Optional[Dict]:
 def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
                   risk_percent: float = 0.05, atr_stop: float = 1.5, atr_target: float = 8.0,
                   trading_mode: str = "swing", atr_period: int = 10, sma_period: int = 30,
-                  commission: float = None, slippage: float = 0.0005) -> Dict:
+                  commission: float = None, slippage: float = 0.0005,
+                  use_vol_filter: bool = True,
+                  vol_threshold: float = 0.5) -> Dict:
     """运行回测
     
     Args:
@@ -219,11 +221,22 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
         sma_period=sma_period,
         atr_stop=atr_stop, 
         atr_target=atr_target,
-        trading_mode=trading_mode
+        trading_mode=trading_mode,
+        use_vol_filter=use_vol_filter,
+        vol_threshold=vol_threshold,
     )
     
     dates, opens, highs, lows, closes = data['dates'], data['opens'], data['highs'], data['lows'], data['closes']
-    
+    volumes = data.get('volumes', [None] * len(dates))
+
+    # 成交量过滤器：入场要求今日成交量 > vol_threshold × 60日均量
+    vol_avg = sum(volumes[-60:]) / min(60, len([v for v in volumes[-60:] if v])) if volumes and any(v and v > 0 for v in volumes[-60:]) else None
+    if use_vol_filter and vol_avg and vol_avg > 0:
+        vol_note = f"成交量过滤>×{vol_threshold}均量"
+    else:
+        vol_note = "成交量过滤关闭"
+    print(f"  {vol_note}，阈值={vol_avg*vol_threshold:,.0f}" if vol_avg else "")
+
     # 提取日期部分用于日内判断
     date_only = [d.split()[0] if ' ' in str(d) else str(d) for d in dates]
     
@@ -245,7 +258,9 @@ def run_backtest(data: Dict, symbol: str, initial_capital: float = 100000,
         trend, atr = result.get('trend', 'unknown'), result.get('atr', 0)
         
         # 入场 - 支持做多和做空
-        if position == 0 and atr > 0:
+        # 成交量过滤：要求今日成交量 > vol_threshold × 60日均量
+        vol_ok = (not use_vol_filter) or (vol_avg is None) or (not volumes or not volumes[i] or volumes[i] >= vol_avg * vol_threshold)
+        if position == 0 and atr > 0 and vol_ok:
             position_size = int((current_capital * effective_risk) / (atr * atr_stop * 10))
             if position_size <= 0:
                 position_size = 1  # 最小仓位
@@ -456,6 +471,10 @@ def main():
     parser.add_argument('--sma-period', type=int, default=30, help='均线周期（优化值：30）')
     parser.add_argument('--commission', type=float, default=None, help='手续费 (默认使用品种配置)')
     parser.add_argument('--slippage', type=float, default=0.0005, help='滑点比例 (默认万分之5)')
+    parser.add_argument('--no-vol-filter', dest='use_vol_filter', action='store_false',
+                       help='关闭成交量过滤（默认开启，成交量>0.5×60日均量）')
+    parser.add_argument('--vol-threshold', type=float, default=0.5,
+                       help='成交量过滤阈值（默认0.5，即>0.5×60日均量）')
     
     args = parser.parse_args()
     
@@ -477,7 +496,9 @@ def main():
                           atr_stop=args.atr_stop, atr_target=args.atr_target,
                           trading_mode=args.mode, 
                           atr_period=args.atr_period, sma_period=args.sma_period,
-                          commission=args.commission, slippage=args.slippage)
+                          commission=args.commission, slippage=args.slippage,
+                          use_vol_filter=args.use_vol_filter,
+                          vol_threshold=args.vol_threshold)
     
     # 保存结果
     result_file = f"backtest_result_{args.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
