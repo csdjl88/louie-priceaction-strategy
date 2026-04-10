@@ -111,6 +111,34 @@ uv run python backtest_runner.py --symbol TA0 --source akshare \
 uv run python backtest_runner.py --symbol rb --source simulate
 ```
 
+### 盘中实时监听（持仓 + 信号）
+
+```bash
+# 完整模式：持仓盈亏监控 + 策略信号检测
+uv run python scripts/realtime_monitor.py
+
+# 5秒刷新间隔
+uv run python scripts/realtime_monitor.py --interval 5
+
+# 只看策略信号
+uv run python scripts/realtime_monitor.py --signals-only
+
+# 只看持仓
+uv run python scripts/realtime_monitor.py --no-signals
+
+# 只扫描指定品种
+uv run python scripts/realtime_monitor.py --signals-only --scan ru rb al cf p
+```
+
+**功能说明：**
+
+| 模式 | 说明 |
+|------|------|
+| 持仓监控 | 实时浮动盈亏、距止损/目标距离、风险等级（🔴极度危险/⚠️高风险/⚡中风险/✅正常） |
+| 策略信号 | PriceAction 趋势跟踪，自动扫描多品种，输出做多/做空信号、建议止损/目标、信心度 |
+
+**实时行情数据源：** 新浪财经盘中 API（通过 curl 调用）
+
 ### 启动信号监控
 
 ```bash
