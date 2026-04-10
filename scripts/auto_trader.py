@@ -237,26 +237,33 @@ def execute_signal(signal: Dict, current_price: float):
     if len(portfolio.positions) >= MAX_POSITIONS:
         return
 
-    # ── 规则3：保证金不超过70% ──
-    margin_needed = price * 1 * portfolio.margin_rate
+        # ── 规则3：按风险计算仓位（每笔风险 2%）先算手数，再算保证金 ──
+    risk_percent = 0.02  # 每笔交易风险 2% 本金
+    risk_amount = portfolio.initial_capital * risk_percent
+    risk_per_contract = abs(price - stop) if stop and stop > 0 else price * 0.02
+    volume = max(1, int(risk_amount / risk_per_contract))
+    volume = min(volume, 5)  # 最多5手
+
+    # 保证金检查（用计算后的手数）
+    margin_needed = price * volume * portfolio.margin_rate
     current_margin = portfolio._get_margin_used()
     if (current_margin + margin_needed) / portfolio.initial_capital > MAX_MARGIN_RATIO:
         return
 
     if DRY_RUN:
         d = '买入' if direction == 'long' else '卖出'
-        log_message(f"📋 [模拟] {d} {sym} @ {price} | 止损 {stop} | 目标 {target} | ATR {atr:.2f} | 信号: {signal.get('reason','')}")
+        log_message(f"📋 [模拟] {d} {sym} @ {price} x{volume} | 止损 {stop} | 目标 {target} | ATR {atr:.2f} | 风险 {risk_percent*100:.0f}% | 信号: {signal.get('reason','')}")
         return
 
     success = portfolio.open_position(
         symbol=sym, direction=direction, entry_price=price,
-        volume=1, stop_loss=stop, target=target, atr=atr
+        volume=volume, stop_loss=stop, target=target, atr=atr
     )
 
     if success:
         emoji = '🟢' if direction == 'long' else '🔴'
         d = '做多' if direction == 'long' else '做空'
-        log_message(f"✅ {emoji} 开仓 {sym} {d} @ {price} | 止损 {stop} | 目标 {target} | ATR {atr:.2f}")
+        log_message(f"✅ {emoji} 开仓 {sym} {d} x{volume} @ {price} | 止损 {stop} | 目标 {target} | ATR {atr:.2f}")
 
 
 def check_and_close_positions(prices: Dict[str, float]):
