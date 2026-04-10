@@ -136,8 +136,9 @@ class Portfolio:
         exit_dt = datetime.strptime(exit_time, '%Y-%m-%d %H:%M:%S')
         holding_days = (exit_dt - entry_dt).days
 
-        margin = pos.entry_price * pos.volume * self.margin_rate
-        self.cash += margin + pnl
+        # 保证金是 Broker 预扣的押金，不从账户现金扣
+        # 平仓时只退还盈亏和手续费差额
+        self.cash += pnl
 
         trade = ClosedTrade(
             symbol=pos.symbol, direction=pos.direction,
