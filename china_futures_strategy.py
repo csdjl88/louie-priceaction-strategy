@@ -791,12 +791,11 @@ class ChinaFuturesStrategy:
     
     def __init__(self,
                  symbol: str = 'rb',
-                 risk_percent: float = 0.05,
+                 risk_percent: float = 0.10,
                  atr_period: int = 10,
                  sma_period: int = 30,
                  atr_stop: float = 1.5,
-                 atr_target: float = 6.0,       # 优化值：止盈6×ATR（回测最优值）
-                 risk_percent: float = 0.10,   # 风险放大到10%（H2 only时最优）
+                 atr_target: float = 6.0,
                  use_vol_filter: bool = True,
                  vol_threshold: float = 0.5,
                  lookback_period: int = 20,
