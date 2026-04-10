@@ -130,12 +130,43 @@ uv run python scripts/realtime_monitor.py --no-signals
 uv run python scripts/realtime_monitor.py --signals-only --scan ru rb al cf p
 ```
 
+### 自动交易 + 实时监听
+
+```bash
+# 启动自动交易（默认 10 万本金，模拟模式）
+uv run python scripts/auto_trader.py
+
+# 实盘模式（发现信号自动下单）
+uv run python scripts/auto_trader.py --capital 100000
+
+# 模拟模式（只产生信号，不下单）
+uv run python scripts/auto_trader.py --dry-run
+
+# 自定义本金和刷新间隔
+uv run python scripts/auto_trader.py --capital 50000 --interval 5
+
+# 只扫描指定品种
+uv run python scripts/auto_trader.py --scan ru rb al cf p
+
+```
+
 **功能说明：**
 
 | 模式 | 说明 |
 |------|------|
 | 持仓监控 | 实时浮动盈亏、距止损/目标距离、风险等级（🔴极度危险/⚠️高风险/⚡中风险/✅正常） |
 | 策略信号 | PriceAction 趋势跟踪，自动扫描多品种，输出做多/做空信号、建议止损/目标、信心度 |
+| 自动交易 | 发现信号自动开仓，支持模拟/实盘模式，自动止损/止盈检查 |
+| 日志记录 | 交易记录 CSV、账户快照 JSON，实时写入 logs/ 目录 |
+
+**日志文件说明：**
+
+| 文件 | 说明 |
+|------|------|
+| `trade_log_*.csv` | 所有交易流水（开仓/平仓） |
+| `closed_trades_*.csv` | 已平仓交易明细 |
+| `status_*.json` | 账户快照（启动/停止时记录） |
+| `auto_trader_*.log` | 运行日志（含信号和盈亏记录） |
 
 **实时行情数据源：** 新浪财经盘中 API（通过 curl 调用）
 
