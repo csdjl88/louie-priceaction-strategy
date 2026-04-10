@@ -146,7 +146,7 @@ class Portfolio:
 # 回测
 # ──────────────────────────────────────────────────────────────────────────
 def run_backtest(symbols: List[str], days: int = 365,
-                 mode: str = 'swing') -> Dict:
+                 mode: str = 'swing', atr_target: float = 8.0) -> Dict:
     """
     多品种组合回测：单一账户，共享仓位
     """
@@ -199,7 +199,7 @@ def run_backtest(symbols: List[str], days: int = 365,
                     })
 
             # 策略信号
-            strat = ChinaFuturesStrategy(sym, trading_mode=mode, require_trend=True)
+            strat = ChinaFuturesStrategy(sym, trading_mode=mode, atr_target=atr_target, require_trend=True)
             result = strat.analyze(opens, highs, lows, closes, i)
             action = result.get('action', 'none')
             if action in ('long', 'short') and sym not in portfolio.positions:
@@ -330,13 +330,19 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--days', type=int, default=365)
     parser.add_argument('--mode', default='swing', choices=['swing', 'intraday'])
+    parser.add_argument('--atr-target', type=float, default=8.0)
     parser.add_argument('--symbols', nargs='+')
+    parser.add_argument('--label', default='')
     args = parser.parse_args()
 
     symbols = args.symbols or get_all_futures_symbols()
-    print(f"开始回测: {len(symbols)} 个品种 | {args.days} 天 | 模式: {args.mode}")
+    label = args.label or f"止盈{args.atr_target}×ATR/{args.mode}"
+    print(f"\n{'='*60}")
+    print(f"  回测: {label}")
+    print(f"{'='*60}")
+    print(f"品种: {len(symbols)} 个 | {args.days} 天 | 模式: {args.mode} | 止盈: {args.atr_target}×ATR")
     print(f"规则: 夏普比优先 | 最多 {MAX_POSITIONS} 仓位 | 保证金上限 {int(MAX_MARGIN_RATIO*100)}%")
     print()
 
-    r = run_backtest(symbols, days=args.days, mode=args.mode)
+    r = run_backtest(symbols, days=args.days, mode=args.mode, atr_target=args.atr_target)
     print_report(r)

@@ -30,7 +30,7 @@ from china_futures_strategy import ChinaFuturesStrategy
 # ──────────────────────────────────────────────────────────────────────────
 SHARPE_WHITELIST = [
     'jm', 'p', 'cs', 'bu', 'v',     # 第一梯队
-    'ni', 'ta', 'i', 'ag', 'a', 'al', 'zn',  # 第二梯队
+    'ta', 'i', 'a', 'al', 'zn',  # 第二梯队（移除 AG/NI）
     'pp', 'sc', 'ru', 'm', 'cf', 'rb', 'sr', 'ma',  # 第三梯队
 ]
 

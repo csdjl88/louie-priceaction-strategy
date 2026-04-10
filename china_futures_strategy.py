@@ -568,7 +568,7 @@ class ChinaFuturesStrategy:
                  atr_period: int = 10,      # 优化值：ATR=10（默认14），更灵敏
                  sma_period: int = 30,      # 优化值：SMA=30（默认50），信号更快
                  atr_stop: float = 1.5,     # 优化值：止损1.5×ATR（默认2.0），损失更小
-                 atr_target: float = 8.0,   # 优化值：止盈8×ATR（默认6.0），让利润奔跑
+                 atr_target: float = 6.0,   # 优化值：止盈6×ATR（回测最优值，收益率+5.19%）
                  use_vol_filter: bool = True,  # 优化值：成交量过滤（>0.5×均量）
                  vol_threshold: float = 0.5,  # 成交量过滤阈值：>threshold×60日均量
                  lookback_period: int = 20,
