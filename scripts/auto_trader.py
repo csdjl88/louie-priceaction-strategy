@@ -70,6 +70,8 @@ SHARPE_WHITELIST = [
     'a',    # 黄大豆A
     'al',   # 铝
     'zn',   # 锌
+    'ag',   # 白银 Sharpe=7.58（回测贡献+42%）
+    'ni',   # 镍 Sharpe=4.00（回测贡献+30%）
     # 第三梯队：夏普比 1.0~2.0
     'pp',   # 聚丙烯
     'sc',   # 原油
@@ -82,6 +84,7 @@ SHARPE_WHITELIST = [
 ]
 
 # 交易规则
+USE_H2_ONLY = True   # Brooks H2 only（只做第二次回调，更可靠）
 MAX_POSITIONS = 3          # 最多持仓数
 MAX_MARGIN_RATIO = 0.70   # 保证金上限（占本金比例）
 
@@ -233,12 +236,15 @@ def execute_signal(signal: Dict, current_price: float):
     atr = signal['atr']
     price = current_price
 
+    # H2 only 过滤：Brooks 认为 H2 更可靠，只做第二次回调
+    if USE_H2_ONLY and signal.get('h1_h2') != 'h2': return
+
     # ── 规则2：最多3个仓位 ──
     if len(portfolio.positions) >= MAX_POSITIONS:
         return
 
         # ── 规则3：按风险计算仓位（每笔风险 2%）先算手数，再算保证金 ──
-    risk_percent = 0.02  # 每笔交易风险 2% 本金
+    risk_percent = 0.10  # 每笔交易风险 10% 2% 本金
     risk_amount = portfolio.initial_capital * risk_percent
     risk_per_contract = abs(price - stop) if stop and stop > 0 else price * 0.02
     volume = max(1, int(risk_amount / risk_per_contract))
