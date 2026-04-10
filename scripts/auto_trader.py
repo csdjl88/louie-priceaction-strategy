@@ -52,6 +52,41 @@ NAME_MAP = {
 
 ALL_SYMBOLS = list(NAME_MAP.keys())
 
+# ──────────────────────────────────────────────────────────────────────────
+# 品种筛选规则：夏普比优先
+# ──────────────────────────────────────────────────────────────────────────
+# 夏普比排序的白名单（从高到低），只交易这些品种
+# 空头/做空用波段回测，做多/做多用日内回测
+SHARPE_WHITELIST = [
+    # 第一梯队：夏普比 > 5.0
+    'jm',   # 焦煤 日内 Sharpe=12.04
+    'p',    # 棕榈油 日内 Sharpe=7.69
+    'cs',   # 玉米淀粉 日内 Sharpe=6.63
+    'bu',   # 沥青 日内 Sharpe=5.68
+    'v',    # PVC 日内 Sharpe=5.33
+    # 第二梯队：夏普比 2.0~5.0
+    'ni',   # 镍
+    'ta',   # PTA 波段 Sharpe=3.92
+    'i',    # 铁矿石 波段 Sharpe=3.62
+    'ag',   # 白银 波段 Sharpe=7.58
+    'a',    # 黄大豆A
+    'al',   # 铝
+    'zn',   # 锌
+    # 第三梯队：夏普比 1.0~2.0
+    'pp',   # 聚丙烯
+    'sc',   # 原油
+    'ru',   # 橡胶
+    'm',    # 豆粕
+    'cf',   # 棉花
+    'rb',   # 螺纹钢
+    'sr',   # 白糖
+    'ma',   # 甲醇
+]
+
+# 交易规则
+MAX_POSITIONS = 3          # 最多持仓数
+MAX_MARGIN_RATIO = 0.70   # 保证金上限（占本金比例）
+
 RED    = '\033[91m'
 GREEN  = '\033[92m'
 YELLOW = '\033[93m'
@@ -180,11 +215,14 @@ def execute_signal(signal: Dict, current_price: float):
     sym = signal['symbol']
     action = signal['action']
 
+    # ── 规则1：夏普比白名单过滤 ──
+    if sym.lower() not in SHARPE_WHITELIST:
+        return
+
     if sym in portfolio.positions:
         return
 
     if action not in ('long', 'short'):
-        # 平仓信号
         if sym in portfolio.positions:
             trade = portfolio.close_position(sym, current_price, reason='signal')
             if trade:
@@ -196,6 +234,16 @@ def execute_signal(signal: Dict, current_price: float):
     target = signal['suggested_target']
     atr = signal['atr']
     price = current_price
+
+    # ── 规则2：最多3个仓位 ──
+    if len(portfolio.positions) >= MAX_POSITIONS:
+        return
+
+    # ── 规则3：保证金不超过70% ──
+    margin_needed = price * 1 * portfolio.margin_rate
+    current_margin = portfolio._get_margin_used()
+    if (current_margin + margin_needed) / portfolio.initial_capital > MAX_MARGIN_RATIO:
+        return
 
     if DRY_RUN:
         d = '买入' if direction == 'long' else '卖出'
@@ -287,13 +335,16 @@ def print_positions(positions: List[Dict], status):
 
 
 def print_account(status):
+    margin_used = portfolio._get_margin_used()
+    margin_ratio = margin_used / _capital * 100
+    margin_col = RED if margin_ratio > 70 else YELLOW if margin_ratio > 50 else GREEN
     print(f"  {BOLD}【账户】{RESET}")
     print(f"  {'─' * 80}")
     total_col = GREEN if status.total_pnl >= 0 else RED
     print(f"  初始资金: {_capital:,.0f}  |  当前权益: {c(f'{status.capital:,.2f}', total_col)}")
     pnl_col = GREEN if status.total_pnl >= 0 else RED
     print(f"  持仓盈亏: {c(f'{status.position_pnl:+.2f}', GREEN if status.position_pnl >= 0 else RED)}  |  已实现: {c(f'{status.realized_pnl:+.2f}', GREEN if status.realized_pnl >= 0 else RED)}  |  总盈亏: {c(f'{status.total_pnl:+.2f}', pnl_col)} ({status.total_pnl/_capital*100:+.2f}%)")
-    print(f"  胜率: {status.win_rate:.1f}%  ({status.winning_trades}胜 {status.losing_trades}负)  |  持仓: {status.position_count}个  |  可用: {status.available:,.2f}")
+    print(f"  胜率: {status.win_rate:.1f}%  ({status.winning_trades}胜 {status.losing_trades}负)  |  持仓: {status.position_count}/{MAX_POSITIONS}个  |  保证金: {c(f'{margin_ratio:.1f}%', margin_col)}  |  可用: {status.available:,.2f}")
     print()
 
 
@@ -322,6 +373,7 @@ def run_trader(capital: float = 100000,
     print(f"  {BOLD}自动交易启动{mode_str}{RESET}")
     print(f"  {'='*80}")
     print(f"  初始资金: {capital:,.0f}  |  刷新间隔: {interval}s  |  扫描品种: {len(ALL_SYMBOLS)}个")
+    print(f"  规则: 夏普比优先 | 最多 {MAX_POSITIONS} 个仓位 | 保证金上限 {int(MAX_MARGIN_RATIO*100)}%")
     print(f"  日志目录: {log_dir}")
     if dry_run:
         print(f"  {YELLOW}⚠️  模拟模式：只产生信号，不执行交易{RESET}")
