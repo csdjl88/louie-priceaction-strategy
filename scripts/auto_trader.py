@@ -65,10 +65,8 @@ SHARPE_WHITELIST = [
     'bu',   # 沥青 日内 Sharpe=5.68
     'v',    # PVC 日内 Sharpe=5.33
     # 第二梯队：夏普比 2.0~5.0
-    'ni',   # 镍
     'ta',   # PTA 波段 Sharpe=3.92
     'i',    # 铁矿石 波段 Sharpe=3.62
-    'ag',   # 白银 波段 Sharpe=7.58
     'a',    # 黄大豆A
     'al',   # 铝
     'zn',   # 锌
