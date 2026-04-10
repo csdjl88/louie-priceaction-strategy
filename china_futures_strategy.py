@@ -128,6 +128,233 @@ TRADING_SESSIONS = {
 
 # ==================== 指标计算（复用 price_action_framework） ====================
 
+# ==================== Brooks 市场状态识别 ====================
+
+def identify_market_state(closes: List[float], ema_fast: float, ema_slow: float) -> str:
+    """
+    Brooks 三种市场状态识别
+    返回: 'trend_bull', 'trend_bear', 'range', 'transition'
+    
+    Brooks 认为市场大部分时间是震荡，趋势是少数情况
+    """
+    if ema_fast is None or ema_slow is None:
+        return 'range'
+    
+    ema_diff_pct = abs(ema_fast - ema_slow) / ema_slow * 100
+    
+    if ema_diff_pct > 1.0:
+        # EMA 开口扩张，趋势明确
+        return 'trend_bull' if ema_fast > ema_slow else 'trend_bear'
+    elif ema_diff_pct < 0.3:
+        # EMA 纠缠，市场震荡
+        return 'range'
+    else:
+        # 过渡状态
+        return 'transition'
+
+
+def calculate_ema(values: List[float], period: int) -> Optional[float]:
+    """EMA 计算"""
+    if len(values) < period:
+        return None
+    multiplier = 2 / (period + 1)
+    ema = sum(values[:period]) / period
+    for price in values[period:]:
+        ema = (price - ema) * multiplier + ema
+    return ema
+
+
+def detect_h1_h2_pullback(opens: List[float], highs: List[float],
+                          lows: List[float], closes: List[float],
+                          idx: int, trend: str,
+                          ema_fast: float) -> Optional[str]:
+    """
+    Brooks H1/H2 回调入场检测
+    
+    H1 = 趋势中的第一次回调入场（较激进）
+    H2 = 趋势中的第二次回调入场（更可靠）
+    
+    Brooks: "H2 通常比 H1 更好，因为第二次回调确认了趋势的强劲"
+    """
+    if idx < 5 or trend not in ('trend_bull', 'trend_bear'):
+        return None
+    
+    if trend == 'trend_bull':
+        # 多头趋势中：价格回落到 EMA 附近
+        pullback_count = 0
+        for i in range(idx - 1, max(0, idx - 6), -1):
+            if lows[i] < lows[i - 1] and closes[i] < ema_fast:
+                pullback_count += 1
+            else:
+                break
+        
+        if pullback_count == 0:
+            return None
+        elif pullback_count >= 2:
+            return 'h2'  # 第二次回调，更可靠
+        else:
+            return 'h1'  # 第一次回调
+    
+    elif trend == 'trend_bear':
+        # 空头趋势中：价格反弹到 EMA 附近
+        pullback_count = 0
+        for i in range(idx - 1, max(0, idx - 6), -1):
+            if highs[i] > highs[i - 1] and closes[i] > ema_fast:
+                pullback_count += 1
+            else:
+                break
+        
+        if pullback_count == 0:
+            return None
+        elif pullback_count >= 2:
+            return 'h2'
+        else:
+            return 'h1'
+    
+    return None
+
+
+def is_fake_breakout_brooks(opens: List[float], highs: List[float],
+                             lows: List[float], closes: List[float],
+                             idx: int, lookback: int = 10) -> str:
+    """
+    Brooks 假突破检测（改进版）
+    
+    Brooks: "大部分突破是假的，是机构收割韭菜的手段"
+    
+    假突破特征：
+    1. 突破后收盘价迅速回到区间内
+    2. 突破后没有加速离开
+    3. 突破K线是小实体
+    """
+    if idx < lookback + 2:
+        return ''
+    
+    # 检测近期是否有突破
+    recent_high = highest(highs, lookback)
+    recent_low = lowest(lows, lookback)
+    
+    # 向上假突破：突破后回落
+    if closes[idx - 1] > recent_high and closes[idx] < opens[idx - 1]:
+        # 突破后收盘在突破K线开盘价下方 = 假突破
+        return 'bearish_fake'
+    
+    # 向下假突破：跌破后反弹
+    if closes[idx - 1] < recent_low and closes[idx] > opens[idx - 1]:
+        return 'bullish_fake'
+    
+    # 额外检查：突破后是否加速
+    if idx >= 3:
+        prev_range = highs[idx - 2] - lows[idx - 2]
+        curr_range = highs[idx] - lows[idx]
+        
+        # 假突破通常在小范围K线后出现
+        if closes[idx - 1] > recent_high and curr_range < prev_range * 0.5:
+            return 'bearish_fake'
+        if closes[idx - 1] < recent_low and curr_range < prev_range * 0.5:
+            return 'bullish_fake'
+    
+    return ''
+
+
+def get_support_resistance_zone(highs: List[float], lows: List[float],
+                                  closes: List[float], idx: int,
+                                  lookback: int = 20) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    """
+    Brooks 支撑阻力区域（Zone）而非精确线
+    
+    Brooks: "支撑阻力不是精确的线，而是区域"
+    """
+    if idx < lookback:
+        return (0.0, 0.0), (float('inf'), float('inf'))
+    
+    recent_lows = sorted(lows[idx - lookback:idx])
+    recent_highs = sorted(highs[idx - lookback:idx], reverse=True)
+    
+    # 取密集区（去掉最高和最低的20%）
+    trim = max(1, len(recent_lows) // 5)
+    zone_lows = recent_lows[trim:-trim] if len(recent_lows) > 2 * trim else recent_lows
+    zone_highs = recent_highs[trim:-trim] if len(recent_highs) > 2 * trim else recent_highs
+    
+    support_zone = (
+        min(zone_lows) if zone_lows else lows[idx - lookback],
+        sum(zone_lows) / len(zone_lows) if zone_lows else lows[idx - lookback]
+    )
+    resistance_zone = (
+        sum(zone_highs) / len(zone_highs) if zone_highs else highs[idx - lookback],
+        max(zone_highs) if zone_highs else highs[idx - lookback]
+    )
+    
+    return support_zone, resistance_zone
+
+
+def brooks_candle_story(opens: List[float], highs: List[float],
+                        lows: List[float], closes: List[float],
+                        idx: int) -> Dict[str, Any]:
+    """
+    Brooks 每根K线的故事解读
+    
+    Brooks: "每根K线都在讲述多空双方的故事"
+    
+    返回 K 线特征描述
+    """
+    if idx < 1:
+        return {'type': 'unknown', 'story': ''}
+    
+    o, c, h, l = opens[idx], closes[idx], highs[idx], lows[idx]
+    po, pc = opens[idx - 1], closes[idx - 1]
+    
+    body = abs(c - o)
+    range_bar = h - l
+    if range_bar == 0:
+        range_bar = 1
+    
+    body_ratio = body / range_bar
+    lower_shadow = min(o, c) - l
+    upper_shadow = h - max(o, c)
+    
+    # Brooks 分类
+    if body_ratio < 0.2 and (lower_shadow > body * 2 or upper_shadow > body * 2):
+        ctype = 'doji'
+        story = '多空平衡，机构在测试'
+    elif body_ratio > 0.8:
+        if c > o:
+            ctype = 'strong_bull_bar'
+            story = '机构主动推价格，趋势延续'
+        else:
+            ctype = 'strong_bear_bar'
+            story = '机构主动推价格，趋势延续'
+    elif upper_shadow > body * 2 and c < (h + l) / 2:
+        ctype = 'shooting_star'
+        story = '冲高回落，空头试探'
+    elif lower_shadow > body * 2 and c > (h + l) / 2:
+        ctype = 'hammer'
+        story = '探底反弹，多头支撑'
+    elif body_ratio < 0.4:
+        ctype = 'small_body'
+        story = '盘整等待'
+    else:
+        ctype = 'normal'
+        story = ''
+    
+    # 收盘位置
+    if c > h - (h - l) * 0.3:
+        close_position = 'strong_close'
+    elif c < l + (h - l) * 0.3:
+        close_position = 'weak_close'
+    else:
+        close_position = 'mid_close'
+    
+    return {
+        'type': ctype,
+        'story': story,
+        'body_ratio': body_ratio,
+        'close_position': close_position,
+        'upper_shadow_ratio': upper_shadow / range_bar,
+        'lower_shadow_ratio': lower_shadow / range_bar,
+    }
+
+
 def highest(values: List[float], period: int) -> float:
     """N日内最高值"""
     if len(values) < period:
@@ -564,20 +791,26 @@ class ChinaFuturesStrategy:
     
     def __init__(self,
                  symbol: str = 'rb',
-                 risk_percent: float = 0.05,  # 5%仓位（确保能开仓）
-                 atr_period: int = 10,      # 优化值：ATR=10（默认14），更灵敏
-                 sma_period: int = 30,      # 优化值：SMA=30（默认50），信号更快
-                 atr_stop: float = 1.5,     # 优化值：止损1.5×ATR（默认2.0），损失更小
-                 atr_target: float = 6.0,   # 优化值：止盈6×ATR（回测最优值，收益率+5.19%）
-                 use_vol_filter: bool = True,  # 优化值：成交量过滤（>0.5×均量）
-                 vol_threshold: float = 0.5,  # 成交量过滤阈值：>threshold×60日均量
+                 risk_percent: float = 0.05,
+                 atr_period: int = 10,
+                 sma_period: int = 30,
+                 atr_stop: float = 1.5,
+                 atr_target: float = 6.0,
+                 use_vol_filter: bool = True,
+                 vol_threshold: float = 0.5,
                  lookback_period: int = 20,
                  body_ratio: float = 2.0,
                  shadow_ratio: float = 2.0,
                  require_trend: bool = True,
                  use_limit_filter: bool = True,
                  max_loss_per_day: float = 0.05,
-                 trading_mode: str = "swing"):
+                 trading_mode: str = "swing",
+                 # Brooks 新增参数
+                 use_market_state: bool = True,    # Brooks 市场状态识别
+                 use_h1_h2: bool = True,         # Brooks H1/H2 回调入场
+                 use_fake_breakout_filter: bool = True,  # Brooks 假突破过滤
+                 use_zone_sr: bool = True,       # Brooks 支撑阻力 Zone
+                 ):
         """
         初始化策略参数
 
@@ -612,6 +845,12 @@ class ChinaFuturesStrategy:
         self.use_limit_filter = use_limit_filter
         self.max_loss_per_day = max_loss_per_day
         
+        # Brooks 新增参数
+        self.use_market_state = use_market_state
+        self.use_h1_h2 = use_h1_h2
+        self.use_fake_breakout_filter = use_fake_breakout_filter
+        self.use_zone_sr = use_zone_sr
+        
         # 状态
         self.daily_loss = 0.0
         self.positions = []
@@ -619,9 +858,9 @@ class ChinaFuturesStrategy:
     
     def detect_trend(self, closes: List[float]) -> str:
         """
-        判断趋势方向
+        判断趋势方向（兼容旧接口）
         """
-        if len(closes) < self.sma_period:
+        if len(closes) < max(self.sma_period, 20):
             return 'neutral'
         
         sma_value = sma(closes, self.sma_period)
@@ -637,20 +876,38 @@ class ChinaFuturesStrategy:
         else:
             return 'neutral'
     
+    def _get_market_state(self, closes: List[float]) -> str:
+        """
+        Brooks 市场状态识别（内部方法）
+        """
+        if len(closes) < max(self.sma_period, 20):
+            return 'range'
+        
+        sma_fast = calculate_ema(closes, 20)
+        sma_slow = sma(closes, self.sma_period)
+        
+        return identify_market_state(closes, sma_fast, sma_slow)
+    
     def find_key_levels(self, highs: List[float], lows: List[float],
                         closes: List[float], idx: int) -> Tuple[float, float]:
         """
-        找关键支撑阻力位
+        找关键支撑阻力位（可选 Brooks Zone 模式）
         """
         lookback = self.lookback_period
         
         if idx < lookback:
             return 0, float('inf')
         
-        resistance = highest(highs, lookback)
-        support = lowest(lows, lookback)
-        
-        return support, resistance
+        if self.use_zone_sr:
+            # Brooks Zone 模式
+            (s_bot, s_top), (r_bot, r_top) = get_support_resistance_zone(
+                highs, lows, closes, idx, lookback)
+            return s_bot, r_top
+        else:
+            # 精确线模式
+            resistance = highest(highs, lookback)
+            support = lowest(lows, lookback)
+            return support, resistance
     
     def check_near_key_level(self, price: float, support: float,
                              resistance: float, tolerance: float = 0.005) -> str:
@@ -808,17 +1065,23 @@ class ChinaFuturesStrategy:
             'risk_reward': 0,
             'action': 'none',
             'reason': '',
-            'session_end_force_close': False
+            'session_end_force_close': False,
+            # Brooks 新增字段
+            'market_state': 'range',
+            'h1_h2': None,
+            'fake_breakout': '',
+            'candle_story': {},
         }
         
-        # 1. 趋势判断
+        # 1. Brooks 市场状态识别
+        if self.use_market_state:
+            result['market_state'] = self._get_market_state(closes)
         trend = self.detect_trend(closes)
         result['trend'] = trend
         
-        # 如果要求趋势确认且趋势不明确
-        if self.require_trend and trend == 'neutral':
-            result['reason'] = '趋势不明确'
-            return result
+        # Brooks: 震荡市场中降低仓位，趋势市场中寻找 H1/H2
+        if result['market_state'] == 'range' and self.require_trend:
+            result['reason'] = '震荡市场，等待突破'
         
         # 2. 找关键位
         support, resistance = self.find_key_levels(highs, lows, closes, idx)
@@ -829,22 +1092,41 @@ class ChinaFuturesStrategy:
         near_level = self.check_near_key_level(closes[idx], support, resistance)
         result['near_key_level'] = near_level
         
-        # 4. 检测涨跌停
+        # 4. Brooks K线故事
+        result['candle_story'] = brooks_candle_story(opens, highs, lows, closes, idx)
+        
+        # 5. Brooks H1/H2 回调检测
+        if self.use_h1_h2 and result['market_state'] in ('trend_bull', 'trend_bear'):
+            sma_fast = calculate_ema(closes, 20)
+            result['h1_h2'] = detect_h1_h2_pullback(
+                opens, highs, lows, closes, idx,
+                result['market_state'], sma_fast)
+        
+        # 6. Brooks 假突破过滤
+        if self.use_fake_breakout_filter:
+            result['fake_breakout'] = is_fake_breakout_brooks(
+                opens, highs, lows, closes, idx, lookback=10)
+            if result['fake_breakout']:
+                result['reason'] = f"假突破过滤 ({result['fake_breakout']})"
+        
+        # 7. 检测涨跌停
+        limit_move = ''
         if self.use_limit_filter:
             limit_move = detect_limit_move(opens, closes, highs, lows, idx)
             result['limit_move'] = limit_move
         
-        # 5. 检测跳空
+        # 8. 检测跳空
+        gap_info = {'has_gap': False, 'gap_size': 0}
         gap_info = detect_gap(highs, lows, closes, opens, idx)
         result['has_gap'] = gap_info['has_gap']
         result['gap_size'] = gap_info.get('gap_size', 0)
         
-        # 6. 检测价格行为信号
+        # 9. 检测价格行为信号
         signals = self.detect_signals(opens, closes, highs, lows, idx)
         result['signals'] = signals
         result['signal_direction'] = self.get_signal_direction(signals, trend)
         
-        # 7. 综合判断
+        # 10. Brooks 综合判断
         directions = []
         confidences = []
         
@@ -853,10 +1135,23 @@ class ChinaFuturesStrategy:
             directions.append(trend)
             confidences.append(2 if near_level else 1)
         
-        # 价格行为
-        if result['signal_direction'] != 'neutral':
+        # H1/H2 入场（Brooks 最重要信号）
+        if result['h1_h2']:
+            h1_h2_dir = 'bullish' if result['market_state'] == 'trend_bull' else 'bearish'
+            directions.append(h1_h2_dir)
+            confidences.append(3 if result['h1_h2'] == 'h2' else 2)  # H2 信心更高
+        
+        # Brooks 吞没/Pin Bar 强信号
+        strong_signals = ['engulfing_bullish', 'engulfing_bearish']
+        for sig in strong_signals:
+            if sig in signals:
+                directions.append('bullish' if 'bullish' in sig else 'bearish')
+                confidences.append(2)
+        
+        # 一般价格行为
+        if result['signal_direction'] not in ('neutral',) and not any(s in result['signal_direction'] for s in strong_signals):
             directions.append(result['signal_direction'])
-            confidences.append(2)
+            confidences.append(1)
         
         # 统计最终方向
         bullish = directions.count('bullish')
@@ -864,12 +1159,27 @@ class ChinaFuturesStrategy:
         
         if bullish > bearish:
             result['final_direction'] = 'bullish'
-            result['confidence'] = bullish / len(directions) if directions else 0
+            conf = bullish / len(directions) if directions else 0
+            # Brooks H2 信心加成
+            if result['h1_h2'] == 'h2':
+                conf = min(1.0, conf * 1.2)
+            result['confidence'] = round(conf, 2)
         elif bearish > bullish:
             result['final_direction'] = 'bearish'
-            result['confidence'] = bearish / len(directions) if directions else 0
+            conf = bearish / len(directions) if directions else 0
+            if result['h1_h2'] == 'h2':
+                conf = min(1.0, conf * 1.2)
+            result['confidence'] = round(conf, 2)
         
-        # 8. 计算交易参数
+        # 8. Brooks 过滤规则
+        if result['fake_breakout']:
+            result['confidence'] = round(result['confidence'] * 0.5, 2)
+        
+        # Brooks: 震荡市场中，等待突破确认
+        if self.use_market_state and result['market_state'] == 'range' and not result['near_key_level']:
+            result['confidence'] = round(result['confidence'] * 0.7, 2)
+        
+        # 9. 计算交易参数
         if result['final_direction'] != 'neutral':
             direction = result['final_direction']
             
@@ -878,21 +1188,17 @@ class ChinaFuturesStrategy:
                 result['reason'] = f'涨跌停限制 ({limit_move})'
                 return result
             
-            # 跳空过滤（大幅跳空开反向仓位风险大）
+            # 跳空过滤
             if gap_info['has_gap'] and abs(gap_info.get('gap_size', 0)) > 1.0:
                 result['reason'] = f'跳空过大 ({gap_info.get("gap_size", 0):.2f}%)'
-                # 不直接返回，但降低信心
             
             entry = closes[idx]
-            # 计算 ATR 并添加到结果
             result['atr'] = atr(opens, highs, lows, closes, idx, period=self.atr_period)
             stop_loss = self.calculate_stop_loss(opens, closes, highs, lows, idx,
                                                direction, support, resistance)
             
-            # 止盈（2:1盈亏比）
             take_profit = self.calculate_take_profit(entry, stop_loss, direction)
             
-            # 计算实际盈亏比
             risk = abs(entry - stop_loss)
             reward = abs(take_profit - entry)
             risk_reward = reward / risk if risk > 0 else 0
@@ -905,10 +1211,18 @@ class ChinaFuturesStrategy:
             # 判断是否建议交易
             if result['confidence'] >= 0.5 and risk_reward >= 1.5:
                 result['action'] = 'long' if direction == 'bullish' else 'short'
-                result['reason'] = f"信号确认 {result['confidence']:.0%} 信心"
+                # Brooks 信号理由
+                reasons = []
+                if result['h1_h2']:
+                    reasons.append(f"{result['h1_h2'].upper()}回调")
+                if result['near_key_level']:
+                    reasons.append(f"关键位{result['near_key_level']}")
+                if result['candle_story'].get('type') in ('hammer', 'shooting_star', 'strong_bull_bar', 'strong_bear_bar'):
+                    reasons.append(result['candle_story']['story'][:10])
+                result['reason'] = ', '.join(reasons) or f"信号确认 {result['confidence']:.0%}"
             else:
                 result['action'] = 'none'
-                result['reason'] = f"信心不足 ({result['confidence']:.0%}) 或盈亏比不佳 ({risk_reward:.2f})"
+                result['reason'] = result['reason'] or f"信心不足 ({result['confidence']:.0%}) 或盈亏比不佳 ({risk_reward:.2f})"
 
         # 日内模式：持仓跨日时强制平仓检测
         if self.trading_mode == 'intraday' and 'entry_idx' in result and (idx - result['entry_idx']) > 0:
